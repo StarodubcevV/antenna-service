@@ -24,6 +24,8 @@
   #cut:hover{background:#ffcf91}
   #cut:disabled{opacity:.53;cursor:default}
   .actions{gap:5px}
+  .control-meta{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+  #sound-toggle{min-height:36px;font-size:.875rem}
   .directions{display:flex;gap:5px}
   .direction{min-width:40px;touch-action:none}
   .status{min-height:2.55em;padding-top:10px}
@@ -63,6 +65,7 @@
     [data-key="ArrowDown"]{grid-area:down}
     [data-key="ArrowRight"]{grid-area:right}
     #cut{width:100%;min-height:62px;padding:8px;line-height:1.2}
+    #sound-toggle{min-height:44px}
   }
 </style>
 <main>
@@ -305,7 +308,10 @@
     <button id="replay">Сыграть ещё раз</button>
   </section>
   <div id="controls" class="controls" hidden>
-    <div id="location"></div>
+    <div class="control-meta">
+      <div id="location"></div>
+      <button id="sound-toggle" type="button" aria-label="Звук" aria-pressed="true">Звук включён</button>
+    </div>
     <div class="actions" aria-label="Управление">
       <div class="directions">
         <button class="direction" data-key="ArrowUp" aria-label="Вверх или войти">↑</button>
@@ -372,11 +378,154 @@
   };
   const held = new Set();
   const movement = ['ArrowLeft', 'ArrowRight'];
+  const musicBars = [
+    {bass:38, chord:[57,62,65], melody:[69,0,0,72,74,0,72,0]},
+    {bass:34, chord:[53,58,62], melody:[69,0,65,0,67,0,0,0]},
+    {bass:41, chord:[53,57,60], melody:[65,0,69,0,72,0,69,0]},
+    {bass:36, chord:[55,60,64], melody:[67,0,0,64,62,0,0,0]},
+    {bass:38, chord:[57,62,65], melody:[65,0,69,0,74,0,76,0]},
+    {bass:43, chord:[55,58,62], melody:[74,0,70,0,67,0,0,0]},
+    {bass:34, chord:[53,58,62], melody:[65,0,67,0,69,0,74,0]},
+    {bass:45, chord:[57,61,64], melody:[73,0,0,69,0,0,64,0]},
+  ];
+  let audioContext, audioGain, noiseBuffer;
+  let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let playing = false;
   let enteredCode = '', codeChallenge = null;
   let saluteStart = null;
   let climb = null, snipUntil = 0, steps = 0, previousTime = 0, guidance = '';
+
+  function updateAudioGain() {
+    if (!audioGain) return;
+    const active = soundEnabled && !document.hidden;
+    audioGain.gain.setTargetAtTime(active ? .62 : 0, audioContext.currentTime, .025);
+  }
+
+  function wakeAudio() {
+    if (!playing || !soundEnabled) return;
+    if (!audioContext) {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) {
+        byId('sound-toggle').disabled = true;
+        byId('sound-toggle').textContent = 'Звук недоступен';
+        return;
+      }
+      try {
+        audioContext = new Audio();
+      } catch {
+        return;
+      }
+      audioGain = audioContext.createGain();
+      audioGain.gain.value = 0;
+      audioGain.connect(audioContext.destination);
+      noiseBuffer = audioContext.createBuffer(1, Math.ceil(audioContext.sampleRate * .26), audioContext.sampleRate);
+      const samples = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+      updateAudioGain();
+    }
+    if (audioContext.state !== 'running') audioContext.resume().catch(() => {});
+  }
+
+  function audioRunning() {
+    return soundEnabled && audioContext?.state === 'running' && !document.hidden;
+  }
+
+  function envelopedGain(at, seconds, volume) {
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(.0001, at);
+    gain.gain.linearRampToValueAtTime(volume, at + .008);
+    gain.gain.exponentialRampToValueAtTime(.0001, at + seconds);
+    gain.connect(audioGain);
+    return gain;
+  }
+
+  function tone(at, frequency, seconds, volume, type = 'sine', endFrequency = frequency) {
+    const oscillator = audioContext.createOscillator();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, at);
+    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, at + seconds);
+    oscillator.connect(envelopedGain(at, seconds, volume));
+    oscillator.start(at);
+    oscillator.stop(at + seconds);
+  }
+
+  function noise(at, frequency, seconds, volume) {
+    const source = audioContext.createBufferSource();
+    const filter = audioContext.createBiquadFilter();
+    source.buffer = noiseBuffer;
+    filter.type = 'bandpass';
+    filter.frequency.value = frequency;
+    filter.Q.value = .72;
+    source.connect(filter);
+    filter.connect(envelopedGain(at, seconds, volume));
+    source.start(at);
+    source.stop(at + seconds);
+  }
+
+  function midiFrequency(note) {
+    return 440 * 2 ** ((note - 69) / 12);
+  }
+
+  function playMusic() {
+    if (!audioRunning()) return;
+    const now = audioContext.currentTime;
+    if (musicAt < now) musicAt = now + .035;
+    if (musicAt > now + .13) return;
+    const beat = musicStep % 8;
+    const bar = musicBars[Math.floor(musicStep / 8)];
+    if (beat === 0 || beat === 4) tone(musicAt, midiFrequency(bar.bass), .8, .045);
+    if (beat % 2 === 0) {
+      const harmony = bar.chord[(beat / 2) % bar.chord.length];
+      tone(musicAt, midiFrequency(harmony), .58, .029, 'triangle');
+    }
+    const melody = bar.melody[beat];
+    if (melody) tone(musicAt + .022, midiFrequency(melody), .47, .035);
+    musicAt += .36;
+    musicStep = (musicStep + 1) % (musicBars.length * 8);
+  }
+
+  function soundEffect(effect) {
+    if (!audioRunning()) return;
+    const at = audioContext.currentTime + .008;
+    switch (effect) {
+      case 'step':
+        noise(at, scene === 'inside' ? 410 : 760, .085, .065);
+        tone(at, scene === 'inside' ? 95 : 76, .075, .044, 'sine', 49);
+        break;
+      case 'door':
+        noise(at, 250, .19, .095);
+        tone(at + .04, 132, .13, .073, 'triangle', 55);
+        break;
+      case 'cut':
+        noise(at, 1900, .075, .21);
+        tone(at, 345, .08, .087, 'triangle', 110);
+        break;
+      case 'repair':
+        tone(at, 350, .09, .095, 'triangle');
+        tone(at + .065, 530, .18, .088);
+        break;
+      case 'click':
+        tone(at, 640, .06, .061, 'triangle', 440);
+        break;
+      case 'error':
+        tone(at, 220, .15, .095, 'triangle', 148);
+        break;
+      case 'unlock':
+        tone(at, 435, .11, .075);
+        tone(at + .085, 660, .22, .09, 'triangle');
+        break;
+      case 'win':
+        [62, 65, 69, 74].forEach((note, i) => tone(at + i * .105, midiFrequency(note), .53, .085, 'triangle'));
+        break;
+    }
+  }
+
+  function stepSound(now) {
+    if (now - lastStepSound < 255) return;
+    lastStepSound = now;
+    soundEffect('step');
+  }
 
   byId('facade').innerHTML = streetDoors.map((center, index) => `
     <g transform="translate(${center} 0)" stroke="#4c4252" stroke-width="3" stroke-linejoin="round">
@@ -476,12 +625,16 @@
   }
 
   function addDigit(digit) {
-    if (enteredCode.length < lockCode.length) enteredCode += digit;
+    if (enteredCode.length < lockCode.length) {
+      enteredCode += digit;
+      soundEffect('click');
+    }
     byId('lock-error').textContent = '';
     renderCode();
   }
 
   function eraseDigit() {
+    if (enteredCode) soundEffect('click');
     enteredCode = enteredCode.slice(0, -1);
     byId('lock-error').textContent = '';
     renderCode();
@@ -499,22 +652,26 @@
     byId('lock-cancel').textContent = 'Отмена';
     byId('lock-error').textContent = '';
     renderCode();
+    soundEffect('click');
     lock.showModal();
   }
 
   function submitCode() {
     if (!codeChallenge) return;
     if (enteredCode.length !== lockCode.length) {
+      soundEffect('error');
       byId('lock-error').textContent = 'Введите все четыре цифры.';
       return;
     }
     if (enteredCode !== lockCode) {
+      soundEffect('error');
       byId('lock-error').textContent = codeChallenge.question ? 'Не угадали. Попробуйте ещё раз.' : 'Неверный код. Попробуйте ещё раз.';
       enteredCode = '';
       renderCode();
       return;
     }
     const {onUnlock, question} = codeChallenge;
+    soundEffect('unlock');
     codeChallenge = null;
     if (question) {
       byId('lock-prompt').textContent = `Вы молодец! Настоящий старожил! Запомните: ${lockCode} — код для чердака и ящиков.`;
@@ -531,13 +688,18 @@
     if (amp.stage === 'closed') {
       return requestCode('Замок ящика с усилителем', () => {
         amp.stage = 'open';
+        soundEffect('door');
         updateView();
       });
     }
-    if (amp.stage === 'used') amp.stage = 'closed';
+    if (amp.stage === 'used') {
+      amp.stage = 'closed';
+      soundEffect('door');
+    }
     else {
       amp.powered = !amp.powered;
       amp.stage = 'used';
+      soundEffect(amp.powered ? 'repair' : 'click');
     }
     updateView();
   }
@@ -554,6 +716,7 @@
       win.hidden = hideWin;
       saluteStart = hideWin ? null : performance.now();
       salute.setAttribute('hidden', '');
+      if (!hideWin) soundEffect('win');
     }
   }
 
@@ -631,6 +794,7 @@
   }
 
   function goTo(nextScene, position, direction = 1) {
+    if (playing && scene !== nextScene) soundEffect('door');
     scene = nextScene;
     x = position;
     face = direction;
@@ -671,15 +835,19 @@
 
   function toggleCable() {
     if (climb || scene === 'street') return;
+    let cut;
     if (scene === 'roof') {
       if (!near(mainCableX, 68)) return setGuidance('Подойдите к толстому кабелю под антенной.');
       mainCut = !mainCut;
+      cut = mainCut;
     } else {
       const door = nearestDoor();
       if (door < 0) return setGuidance('Подойдите к двери и нажмите пробел или кнопку действия.');
       const cables = currentFloor();
       cables[door] = !cables[door];
+      cut = cables[door];
     }
+    soundEffect(cut ? 'cut' : 'repair');
     snipUntil = performance.now() + 330;
     updateView();
   }
@@ -701,13 +869,16 @@
     if (climb || held.has(key)) return;
     const direction = key === 'ArrowLeft' ? -1 : 1;
     face = direction;
-    x = limitX(x + direction * 13);
+    const nextX = limitX(x + direction * 13);
+    if (nextX !== x) stepSound(performance.now());
+    x = nextX;
     held.add(key);
   }
 
   window.addEventListener('keydown', (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (!playing) return;
+    wakeAudio();
     if (lock.open) {
       if (!codeChallenge) return;
       if (!/^[0-9]$/.test(event.key) && !['Backspace', 'Enter'].includes(event.key)) return;
@@ -732,6 +903,8 @@
   });
   window.addEventListener('keyup', (event) => held.delete(event.key));
   window.addEventListener('blur', () => held.clear());
+  document.addEventListener('pointerdown', wakeAudio);
+  document.addEventListener('visibilitychange', updateAudioGain);
   document.querySelectorAll('[data-key]').forEach((button) => {
     const key = button.dataset.key;
     if (!movement.includes(key)) {
@@ -772,12 +945,21 @@
   });
   byId('start').addEventListener('click', () => {
     playing = true;
+    wakeAudio();
     byId('intro').hidden = true;
     byId('game-frame').classList.remove('intro-active');
     byId('controls').hidden = false;
     quest.hidden = false;
     status.hidden = false;
     byId('start').blur();
+  });
+  byId('sound-toggle').addEventListener('click', (event) => {
+    soundEnabled = !soundEnabled;
+    if (soundEnabled) wakeAudio();
+    updateAudioGain();
+    event.currentTarget.setAttribute('aria-pressed', String(soundEnabled));
+    event.currentTarget.textContent = soundEnabled ? 'Звук включён' : 'Звук выключен';
+    if (event.detail > 0) event.currentTarget.blur();
   });
   byId('replay').addEventListener('click', () => {
     entrances.forEach((rows) => rows.forEach((row) => row.fill(false)));
@@ -900,7 +1082,10 @@
       if (walking) face = direction;
       x = nextX;
     }
-    if (walking) steps += delta * 13;
+    if (walking) {
+      steps += delta * 13;
+      stepSound(now);
+    }
     const swing = walking ? Math.sin(steps) * 24 : 0;
     const snipPose = Math.max(0, (snipUntil - now) / 330);
     const arm = snipPose > 0 ? -Math.sin(snipPose * Math.PI) * 83 : -swing * .8;
@@ -912,6 +1097,7 @@
     byId('nearLeg').setAttribute('transform', `translate(-9 -45) rotate(${swing})`);
     byId('arm').setAttribute('transform', `translate(-13 -94) rotate(${arm})`);
     drawSalute(now);
+    playMusic();
     showTargets();
     requestAnimationFrame(animate);
   }
