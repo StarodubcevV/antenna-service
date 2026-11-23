@@ -1058,7 +1058,7 @@
       byId(`apartment-${index}`).textContent = number;
       byId(`apartment-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
       byId(`plate-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
-      byId(`flyer-${index}`).toggleAttribute('hidden', !delivered.has(number));
+      byId(`flyer-${index}`).toggleAttribute('hidden', day !== 1 || !delivered.has(number));
       byId(`door-box-closed-${index}`).toggleAttribute('hidden', open);
       byId(`door-box-open-${index}`).toggleAttribute('hidden', !open);
       const clutter = byId(`obstacle-${index}`);
@@ -1328,7 +1328,7 @@
   function showTargets() {
     const door = scene === 'inside' && !climb ? (apartmentJob?.door ?? nearestDoor()) : -1;
     const cableCut = door >= 0 && currentFloor()[door];
-    const posted = door >= 0 && delivered.has(apartmentNumber(door));
+    const posted = day === 1 && door >= 0 && delivered.has(apartmentNumber(door));
     const entry = scene === 'street' ? nearbyEntrance() : -1;
     const atBench = nearBench();
     const atLadder = atStreetLadder();
