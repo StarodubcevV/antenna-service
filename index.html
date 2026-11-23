@@ -24,7 +24,8 @@
   #cut:hover{background:#ffcf91}
   #cut:disabled{opacity:.53;cursor:default}
   .actions{gap:5px}
-  .direction{min-width:40px}
+  .directions{display:flex;gap:5px}
+  .direction{min-width:40px;touch-action:none}
   .status{min-height:2.55em;padding-top:10px}
   .win{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;margin:12px 0;background:#392b3d;border:1px solid #89645d;border-radius:10px;padding:clamp(15px,3vw,26px)}
   .win h2{font:700 clamp(1.8rem,5vw,3.25rem)/1.05 Georgia,serif;margin:0 0 9px;color:#ffd396}
@@ -42,6 +43,17 @@
   .quest li{min-width:2.25rem;padding:4px 6px;background:#442f42;border-radius:5px;text-align:center;font-size:.875rem}
   .quest li[data-offline="true"]{background:#34453e;color:#cbe3c3}
   @media(max-width:600px){main{width:calc(100% - 20px);padding:13px 0}.frame{margin-top:10px}button{min-height:44px;padding:6px 9px}.score{padding:6px 9px}.status{font-size:.9rem}.win{grid-template-columns:1fr}.win button{justify-self:start}}
+  @media(max-width:700px),(pointer:coarse){
+    .controls{display:grid;justify-content:stretch;gap:8px}
+    .actions{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
+    .directions{--arrow-size:clamp(48px,15vw,64px);display:grid;grid-template-columns:repeat(3,var(--arrow-size));grid-template-areas:". up ." "left down right";gap:6px}
+    .direction{width:var(--arrow-size);height:var(--arrow-size);padding:0;font-size:1.5rem}
+    [data-key="ArrowUp"]{grid-area:up}
+    [data-key="ArrowLeft"]{grid-area:left}
+    [data-key="ArrowDown"]{grid-area:down}
+    [data-key="ArrowRight"]{grid-area:right}
+    #cut{width:100%;min-height:62px;padding:8px;line-height:1.2}
+  }
 </style>
 <main>
   <header>
@@ -49,7 +61,7 @@
     <div class="score">Отключено квартир <strong id="score">0 / 80</strong></div>
   </header>
   <details id="quest" class="quest" open hidden>
-    <summary>Квартиры к отключению <span id="quest-progress"></span></summary>
+    <summary>Отключите всех должников <span id="quest-progress"></span></summary>
     <ul id="quest-list" aria-label="Квартиры-должники"></ul>
   </details>
   <div id="game-frame" class="frame intro-active">
@@ -270,10 +282,12 @@
   <div id="controls" class="controls" hidden>
     <div id="location"></div>
     <div class="actions" aria-label="Управление">
-      <button class="direction" data-key="ArrowLeft" aria-label="Влево">←</button>
-      <button class="direction" data-key="ArrowRight" aria-label="Вправо">→</button>
-      <button class="direction" data-key="ArrowUp" aria-label="Вверх или войти">↑</button>
-      <button class="direction" data-key="ArrowDown" aria-label="Спуститься">↓</button>
+      <div class="directions">
+        <button class="direction" data-key="ArrowUp" aria-label="Вверх или войти">↑</button>
+        <button class="direction" data-key="ArrowLeft" aria-label="Влево">←</button>
+        <button class="direction" data-key="ArrowDown" aria-label="Спуститься">↓</button>
+        <button class="direction" data-key="ArrowRight" aria-label="Вправо">→</button>
+      </div>
       <button id="cut" type="button" disabled>Обрезать кабель</button>
     </div>
   </div>
@@ -543,19 +557,17 @@
     held.clear();
   }
 
-  function snip() {
-    if (climb || scene === 'street' || mainCut) return;
+  function toggleCable() {
+    if (climb || scene === 'street') return;
     if (scene === 'roof') {
       if (!near(mainCableX, 68)) return setGuidance('Подойдите к толстому кабелю под антенной.');
-      mainCut = true;
-      snipUntil = performance.now() + 330;
-      updateView();
-      return;
+      mainCut = !mainCut;
+    } else {
+      const door = nearestDoor();
+      if (door < 0) return setGuidance('Подойдите к двери и нажмите пробел или кнопку действия.');
+      const cables = currentFloor();
+      cables[door] = !cables[door];
     }
-    const door = nearestDoor();
-    if (door < 0) return setGuidance('Подойдите к двери и нажмите пробел.');
-    if (currentFloor()[door]) return;
-    currentFloor()[door] = true;
     snipUntil = performance.now() + 330;
     updateView();
   }
@@ -569,7 +581,7 @@
   function interact() {
     const amp = nearbyAmplifier();
     if (amp) useAmplifier(amp);
-    else snip();
+    else toggleCable();
   }
 
   function hold(key) {
@@ -659,13 +671,14 @@
 
   function showTargets() {
     const door = scene === 'inside' && !climb ? nearestDoor() : -1;
+    const cableCut = door >= 0 && currentFloor()[door];
     const entry = scene === 'street' ? nearbyEntrance() : -1;
     const atExit = scene === 'inside' && !climb && floor === 0 && near(exitX, exitReach);
     const atHatch = scene === 'roof' && near(hatchX, 85);
     const atCable = scene === 'roof' && near(mainCableX, 68);
     const amp = nearbyAmplifier();
     const atAmp = Boolean(amp);
-    const view = [scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, entry, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered].join('/');
+    const view = [scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, entry, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
@@ -673,17 +686,20 @@
     streetDoors.forEach((_, index) => byId(`entry-target-${index}`).setAttribute('opacity', entry === index ? '.44' : '0'));
     byId('exit-target').setAttribute('opacity', atExit ? '.8' : '0');
     byId('hatch-target').setAttribute('opacity', atHatch ? '.4' : '0');
-    byId('cable-target').setAttribute('opacity', atCable && !mainCut ? '.46' : '0');
+    byId('cable-target').setAttribute('opacity', atCable ? '.46' : '0');
     byId('amp-target').setAttribute('opacity', atAmp && amp.stage === 'closed' ? '.65' : '0');
-    actionButton.disabled = scene === 'street' || Boolean(climb) || (mainCut && !atAmp);
-    actionButton.textContent = atAmp ? amplifierAction(amp) : scene === 'roof' ? 'Обрезать главный кабель' : 'Обрезать кабель';
+    actionButton.disabled = scene === 'street' || Boolean(climb);
+    if (atAmp) actionButton.textContent = amplifierAction(amp);
+    else if (scene === 'roof') actionButton.textContent = mainCut ? 'Починить главный кабель' : 'Обрезать главный кабель';
+    else actionButton.textContent = cableCut ? 'Починить кабель' : 'Обрезать кабель';
 
     if (climb) return setGuidance(climb.toRoof ? 'Поднимаемся на крышу…' : climb.direction === 1 ? 'Поднимаемся по лестнице…' : 'Спускаемся по лестнице…');
     if (scene === 'street') return setGuidance(entry >= 0 ? `Подъезд ${entry + 1} · ↑ войти` : 'Подойдите к нужному подъезду и нажмите ↑.');
     if (scene === 'roof') {
       if (atHatch) return setGuidance('Люк · ↓ спуститься на пятый этаж');
+      if (atCable && mainCut) return setGuidance('Главный кабель обрезан · пробел или кнопка, чтобы починить');
       if (mainCut) return setGuidance('Все квартиры отключены. Люк слева.');
-      if (atCable) return setGuidance('Главный кабель · пробел, чтобы отключить весь дом');
+      if (atCable) return setGuidance('Главный кабель · пробел или кнопка, чтобы отключить весь дом');
       return setGuidance('Главный кабель под антенной. Люк для спуска слева.');
     }
     if (atExit) return setGuidance('Выход на улицу · ↑ выйти');
@@ -696,11 +712,11 @@
     }
     if (door >= 0) {
       const label = `Квартира ${apartmentNumber(door)}`;
+      if (cableCut) return setGuidance(`${label} · пробел или кнопка, чтобы починить кабель.`);
       const source = outage(entrance, floor, door);
       if (source === 'roof') return setGuidance(`${label} · сигнал отключён на крыше.`);
-      if (source === 'cable') return setGuidance(`${label} · кабель обрезан.`);
       if (source === 'amplifier') return setGuidance(`${label} · усилитель выключен.`);
-      return setGuidance(`${label} · нажмите пробел, чтобы обрезать кабель.`);
+      return setGuidance(`${label} · пробел или кнопка, чтобы обрезать кабель.`);
     }
     if (roofAccess()) return setGuidance('↑ подняться на крышу · ↓ спуститься на четвёртый этаж');
     if (floor === floorCount - 1) return setGuidance('Верхний пролёт закрыт · ↓ спуститься на четвёртый этаж');
