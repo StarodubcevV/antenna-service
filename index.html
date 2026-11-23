@@ -44,6 +44,10 @@
   .quest ul{display:flex;flex-wrap:wrap;gap:5px;list-style:none;margin:8px 0 0;padding:0}
   .quest li{min-width:2.25rem;padding:4px 6px;background:#442f42;border-radius:5px;text-align:center;font-size:.875rem}
   .quest li[data-offline="true"]{background:#34453e;color:#cbe3c3}
+  .shift{margin:7px 0 0;color:var(--muted);font-size:.875rem}
+  #next-shift{background:var(--gold);color:#302134;font-weight:700}
+  .complaint{position:absolute;right:12px;bottom:12px;width:min(315px,calc(100% - 24px));padding:8px 11px;border:1px solid #b27c6f;border-radius:9px;background:#2d2434f2;color:#ffe2b5;font-size:.875rem;pointer-events:none}
+  .complaint strong{display:block;color:#f5b3a1}
   .lock{width:min(340px,100% - 28px);max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
   .lock::backdrop{background:#211b2abf}
   .lock h2{margin:0;font:700 1.5rem Georgia,serif}
@@ -77,10 +81,11 @@
 <main>
   <header>
     <div><p class="studio">Телестудия «ТВ-Развилка»</p><h1>Антенная служба</h1></div>
-    <div class="score">Отключено квартир <strong id="score">0 / 80</strong></div>
+    <div class="score"><span id="score-label">Листовки</span> <strong id="score">0 / 12</strong></div>
   </header>
   <details id="quest" class="quest" open hidden>
-    <summary>Отключите всех должников <span id="quest-progress"></span></summary>
+    <summary><span id="quest-task">Разнесите листовки</span> <span id="quest-progress"></span></summary>
+    <p id="shift" class="shift"></p>
     <ul id="quest-list" aria-label="Квартиры-должники"></ul>
   </details>
   <div id="game-frame" class="frame intro-active">
@@ -95,6 +100,12 @@
         <linearGradient id="concrete" x2="0" y2="1"><stop stop-color="#a6a0a3"/><stop offset="1" stop-color="#716c7b"/></linearGradient>
         <pattern id="panels" width="109" height="65" patternUnits="userSpaceOnUse"><path d="M0 0h109v65H0Z" fill="none" stroke="#585260" stroke-opacity=".55" stroke-width="2"/></pattern>
         <radialGradient id="glow"><stop stop-color="#ffd497" stop-opacity=".48"/><stop offset="1" stop-color="#ffd497" stop-opacity="0"/></radialGradient>
+        <radialGradient id="landing-night" cx="7%" cy="34%" r="37%">
+          <stop stop-color="#151725" stop-opacity=".14"/><stop offset=".4" stop-color="#151725" stop-opacity=".39"/><stop offset="1" stop-color="#151725" stop-opacity=".82"/>
+        </radialGradient>
+        <filter id="dim-worker" color-interpolation-filters="sRGB">
+          <feComponentTransfer><feFuncR type="linear" slope=".68"/><feFuncG type="linear" slope=".72"/><feFuncB type="linear" slope=".83"/></feComponentTransfer>
+        </filter>
         <pattern id="speckles" width="59" height="47" patternUnits="userSpaceOnUse"><path d="M7 5h2m16 14h1m22-11h2m-12 26h3m-33 5h1m19 4h1m23 1h2" stroke="#ffe1bd" stroke-opacity=".15" stroke-linecap="round"/></pattern>
         <pattern id="tiles" width="145" height="115" patternUnits="userSpaceOnUse" patternTransform="skewX(-26)"><path d="M0 0H145V115" fill="none" stroke="#30283d" stroke-width="3" opacity=".55"/></pattern>
         <g id="skyline">
@@ -115,10 +126,10 @@
       <path d="M1028 60L1080 48V457L1028 448Z" fill="#372b43" opacity=".27"/>
       <path d="M0 44L183 61V455L0 427Z" fill="#48384e" opacity=".36"/>
       <path d="M0 60H1080V550H0Z" fill="url(#speckles)"/>
-      <ellipse cx="634" cy="166" rx="394" ry="219" fill="url(#glow)"/>
+      <ellipse id="landing-glow" cx="634" cy="166" rx="394" ry="219" fill="url(#glow)"/>
       <g stroke="#342631" stroke-width="4" stroke-linejoin="round">
         <path d="M600 60v20m-24 19 13-19h38l13 19Z" fill="#734f56"/>
-        <path d="M578 99h60q-4 12-14 12h-32q-10-2-14-12Z" fill="#ffdc9f"/>
+        <path id="landing-bulb" d="M578 99h60q-4 12-14 12h-32q-10-2-14-12Z" fill="#ffdc9f"/>
         <path d="M20 119h113v137H20Z" fill="#684c58"/>
         <path d="M27 127h99v118H27Z" fill="url(#outside)"/>
         <path d="M29 232v-39h16v15h10v-25h17v42h10v-20h22v-13h20v47H29Z" fill="#49415d" stroke="none"/>
@@ -198,6 +209,7 @@
         <rect id="stairs-up-sign" x="17" y="263" width="125" height="31" rx="4" fill="#634338" stroke="#342631" stroke-width="2"/>
         <text id="stairs-up-label" x="79.5" y="285" font-weight="700" font-size="15" fill="#ffe2b5"></text>
       </g>
+      <rect id="dark-landing" width="1080" height="550" fill="url(#landing-night)" pointer-events="none" hidden=""/>
       </g>
       <g id="street">
         <use href="#skyline"/>
@@ -298,6 +310,10 @@
       </g>
       <g id="salute" fill="none" stroke-width="5" stroke-linecap="round" pointer-events="none" aria-hidden="true" hidden=""></g>
     </svg>
+    <aside id="complaint" class="complaint" role="status" hidden>
+      <strong id="complaint-title"></strong>
+      <span id="complaint-text"></span>
+    </aside>
     <section id="intro" class="intro" aria-label="Вступление">
       <div>
         <p>Уважаемые абоненты посёлка Развилка, не забывайте вовремя оплачивать услуги антенной службы.</p>
@@ -305,6 +321,10 @@
       </div>
     </section>
   </div>
+  <section id="flyer-finish" class="win" aria-live="polite" hidden>
+    <div><h2>Первый день завершён</h2><p>Все листовки на дверях. Завтра список обновится с учётом оплаты.</p></div>
+    <button id="next-shift" type="button">Перейти ко второму дню</button>
+  </section>
   <section id="win" class="win" aria-live="polite" hidden>
     <div>
       <h2>Вы ПОБЕДИЛИ!</h2>
@@ -349,7 +369,24 @@
   const floorCount = 5;
   const totalApartments = streetDoors.length * floorCount * centers.length;
   const entrances = streetDoors.map(() => Array.from({length: floorCount}, () => centers.map(() => false)));
-  const debtors = [2, 11, 18, 23, 33, 38, 42, 52, 59, 62, 70, 79];
+  const flyerTargets = [2, 11, 18, 23, 33, 38, 42, 52, 59, 62, 70, 79];
+  const paidAfterNotice = new Set([18, 33, 52, 70]);
+  const delivered = new Set();
+  const doorNumbers = [
+    ['1111', '0000', '0000', '1111', '1111'],
+    ['1111', '0000', '0011', '1111', '1111'],
+    ['1111', '1111', '0000', '0000', '1111'],
+    ['1111', '0000', '1100', '1111', '1111'],
+  ];
+  const darkFloors = [[3], [2, 4], [4], [3, 5]];
+  const complaintMessages = [
+    'Здравствуйте, у нас пропало телевидение. Посмотрите, пожалуйста.',
+    'На всех каналах чёрный экран. Можно проверить сигнал?',
+    'Телевизор пишет «Нет сигнала». Оформите, пожалуйста, заявку.',
+    'До этого всё показывало, а теперь ни одного канала.',
+    'Добрый день. Телевизор включается, а передачи не идут.',
+    'Пропала картинка. Когда сможете восстановить телевидение?',
+  ];
   const amplifierX = 165;
   const amplifiers = Array.from({length: 2}, () => ({stage: 'closed', powered: true}));
   const byId = (id) => document.getElementById(id);
@@ -359,7 +396,7 @@
   const quest = byId('quest');
   const lock = byId('lock');
   const keypad = byId('keypad');
-  const lockCode = '1946';
+  const lockCode = '1947';
   keypad.innerHTML = `123456789`.split('').map((digit) => `<button type="button" data-digit="${digit}">${digit}</button>`).join('') +
     '<button id="lock-backspace" type="button" aria-label="Стереть цифру">⌫</button><button type="button" data-digit="0">0</button><button id="lock-submit" type="button">Открыть</button>';
   const keypadButtons = [...keypad.querySelectorAll('button')];
@@ -400,6 +437,8 @@
   let audioContext, audioGain, noiseBuffer;
   let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
+  let day = 1, remainingDebtors = [], wrongApartments = [];
+  let lastComplaint = 0, visibleComplaint = 0, complaintAt = 0, complaintUntil = 0, complaintSequence = 0;
   let playing = false;
   let enteredCode = '', codeChallenge = null, usingNumberKeys = false;
   let saluteStart = null;
@@ -524,6 +563,14 @@
         tone(at, 435, .11, .075);
         tone(at + .085, 660, .22, .09, 'triangle');
         break;
+      case 'flyer':
+        noise(at, 1250, .15, .11);
+        tone(at + .06, 180, .08, .047, 'triangle', 93);
+        break;
+      case 'complaint':
+        tone(at, 372, .12, .095, 'triangle', 287);
+        tone(at + .045, 452, .13, .08, 'triangle', 315);
+        break;
       case 'win':
         [62, 65, 69, 74].forEach((note, i) => tone(at + i * .105, midiFrequency(note), .53, .085, 'triangle'));
         break;
@@ -569,8 +616,12 @@
       <path d="M-54 446V238q0-8 8-8h92q8 0 8 8v208Z" fill="url(#doorPaint)" stroke-width="3"/>
       <path d="M-43 278H43v57h-86Zm0 72H43v69h-86Z" fill="none" stroke="#a16c62" opacity=".64" stroke-width="2"/>
       <path d="M-57 448H59" stroke="#bc8d83" stroke-width="4" stroke-linecap="round"/>
-      <path d="M-18 244h36v24h-36Z" fill="#d59763" stroke-width="2"/>
+      <path id="plate-${index}" d="M-18 244h36v24h-36Z" fill="#d59763" stroke-width="2"/>
       <text id="apartment-${index}" y="262" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="700" fill="#392739" stroke="none"></text>
+      <g id="flyer-${index}" transform="translate(-17 303) rotate(-6)" hidden="">
+        <path d="M0 0h31v38H0Z" fill="#f4d59b" stroke-width="1.8"/>
+        <path d="M4 7h23M5 15h19m-19 6h20m-20 6h14" stroke="#9f6c58" stroke-width="1.6"/>
+      </g>
       <circle cx="36" cy="345" r="5" fill="#f0b778" stroke-width="2"/>
       <path d="M37 345h15" fill="none" stroke="#f0b778" stroke-width="3" stroke-linecap="round"/>
       <path d="M51 159v34q0 10 10 10h6m12 0h6q7 0 7 9v36H58" fill="none" stroke="#3c2e42" stroke-width="6" stroke-linecap="round"/>
@@ -585,6 +636,10 @@
 
   function apartmentNumber(door) {
     return (entrance * entrances[entrance].length + floor) * centers.length + door + 1;
+  }
+
+  function hasDoorNumber(door) {
+    return doorNumbers[entrance][floor][door] === '1';
   }
 
   function nearestDoor() {
@@ -693,7 +748,7 @@
     enteredCode = '';
     usingNumberKeys = false;
     byId('lock-title').textContent = title;
-    byId('lock-prompt').textContent = question || 'Введите четыре цифры. Подсказку можно узнать у бабушки на лавочке возле первого подъезда.';
+    byId('lock-prompt').textContent = question || 'Введите четыре цифры.';
     byId('lock-entry').hidden = false;
     byId('lock-submit').textContent = question ? 'Ответить' : 'Открыть';
     byId('lock-cancel').textContent = 'Отмена';
@@ -722,7 +777,7 @@
     soundEffect('unlock');
     codeChallenge = null;
     if (question) {
-      byId('lock-prompt').textContent = `Вы молодец! Настоящий старожил! Запомните: ${lockCode} — код для чердака и ящиков.`;
+      byId('lock-prompt').textContent = 'Вы молодец! Настоящий старожил!';
       byId('lock-entry').hidden = true;
       byId('lock-cancel').textContent = 'Продолжить';
       byId('lock-cancel').focus();
@@ -733,6 +788,7 @@
   }
 
   function useAmplifier(amp) {
+    if (day !== 2) return;
     if (amp.stage === 'closed') {
       return requestCode('Замок ящика с усилителем', () => {
         amp.stage = 'open';
@@ -753,19 +809,53 @@
   }
 
   function updateQuest(outages) {
-    const disconnected = debtors.filter((number) => outages[number - 1]).length;
-    byId('quest-list').innerHTML = debtors.map((number) => {
-      const offline = Boolean(outages[number - 1]);
-      return `<li data-offline="${offline}" aria-label="Квартира ${number}, ${offline ? 'отключена' : 'в сети'}">${number}${offline ? ' ✓' : ''}</li>`;
+    const flyersOnly = day === 1;
+    const targets = flyersOnly ? flyerTargets : remainingDebtors;
+    const isDone = (number) => flyersOnly ? delivered.has(number) : Boolean(outages[number - 1]);
+    const completed = targets.filter(isDone).length;
+    byId('quest-list').innerHTML = targets.map((number) => {
+      const done = isDone(number);
+      const label = flyersOnly ? (done ? 'листовка наклеена' : 'ждёт листовку') : (done ? 'отключена' : 'в сети');
+      return `<li data-offline="${done}" aria-label="Квартира ${number}, ${label}">${number}${done ? ' ✓' : ''}</li>`;
     }).join('');
-    byId('quest-progress').textContent = `· ${disconnected} из ${debtors.length}`;
-    const hideWin = disconnected !== debtors.length;
+    byId('quest-task').textContent = flyersOnly ? 'Разнесите листовки' : 'Отключите всех должников';
+    byId('quest-progress').textContent = `· ${completed} из ${targets.length}`;
+    byId('shift').textContent = flyersOnly ? 'День 1 · Наклейте уведомления на двери квартир из списка.' :
+      `День 2 · После уведомлений оплатили ${delivered.size - remainingDebtors.length} квартиры. Отключите только квартиры из нового списка.`;
+    byId('flyer-finish').hidden = !flyersOnly || completed !== targets.length;
+    wrongApartments = flyersOnly ? [] : outages.flatMap((outage, index) => outage && !remainingDebtors.includes(index + 1) ? [index + 1] : []);
+    if (!wrongApartments.includes(visibleComplaint)) hideComplaint();
+    if (!wrongApartments.length) {
+      lastComplaint = 0;
+      complaintAt = 0;
+    }
+    const hideWin = flyersOnly || completed !== targets.length || wrongApartments.length > 0;
     if (win.hidden !== hideWin) {
       win.hidden = hideWin;
       saluteStart = hideWin ? null : performance.now();
       salute.setAttribute('hidden', '');
       if (!hideWin) soundEffect('win');
     }
+  }
+
+  function hideComplaint() {
+    visibleComplaint = 0;
+    byId('complaint').hidden = true;
+  }
+
+  function updateComplaint(now) {
+    if (visibleComplaint && now >= complaintUntil) hideComplaint();
+    if (!wrongApartments.length || now < complaintAt || lock.open || document.hidden) return;
+    const apartment = wrongApartments.find((number) => number > lastComplaint) ?? wrongApartments[0];
+    lastComplaint = apartment;
+    visibleComplaint = apartment;
+    complaintUntil = now + 4400;
+    complaintAt = now + (wrongApartments.length === 1 ? 10500 : 6500);
+    byId('complaint-title').textContent = `Заявка · квартира ${apartment}`;
+    byId('complaint-text').textContent = complaintMessages[complaintSequence % complaintMessages.length];
+    complaintSequence++;
+    byId('complaint').hidden = false;
+    soundEffect('complaint');
   }
 
   function drawSalute(now) {
@@ -814,7 +904,8 @@
     for (const name of Object.keys(scenes)) byId(name).toggleAttribute('hidden', name !== scene);
     const outages = entrances.flatMap((levels, entry) => levels.flatMap((row, level) => row.map((_, door) => outage(entry, level, door))));
     disconnectedCount = outages.filter(Boolean).length;
-    byId('score').textContent = `${disconnectedCount} / ${totalApartments}`;
+    byId('score-label').textContent = day === 1 ? 'Листовки' : 'Отключено квартир';
+    byId('score').textContent = day === 1 ? `${delivered.size} / ${flyerTargets.length}` : `${disconnectedCount} / ${totalApartments}`;
     updateQuest(outages);
     byId('exit-door').toggleAttribute('hidden', floor !== 0);
     byId('stairs-down').toggleAttribute('hidden', floor === 0);
@@ -822,6 +913,12 @@
     byId('stairs-up-sign').setAttribute('fill', upClosed ? '#50414f' : '#634338');
     byId('stairs-up-label').textContent = toRoof ? '↑ НА КРЫШУ' : upClosed ? '↑ ЗАКРЫТО' : '↑ ВВЕРХ';
     byId('roof-access').toggleAttribute('hidden', !toRoof);
+    const dark = darkFloors[entrance].includes(floor + 1);
+    byId('landing-glow').toggleAttribute('hidden', dark);
+    byId('landing-bulb').setAttribute('fill', dark ? '#615463' : '#ffdc9f');
+    byId('dark-landing').toggleAttribute('hidden', !dark);
+    if (scene === 'inside' && dark) worker.setAttribute('filter', 'url(#dim-worker)');
+    else worker.removeAttribute('filter');
     byId('main-link').toggleAttribute('hidden', mainCut);
     byId('main-ends').toggleAttribute('hidden', !mainCut);
     const amp = localAmplifier();
@@ -834,7 +931,11 @@
       byId('amp-plug-out').toggleAttribute('hidden', amp.powered);
     }
     currentFloor().forEach((cut, index) => {
-      byId(`apartment-${index}`).textContent = apartmentNumber(index);
+      const number = apartmentNumber(index);
+      byId(`apartment-${index}`).textContent = number;
+      byId(`apartment-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
+      byId(`plate-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
+      byId(`flyer-${index}`).toggleAttribute('hidden', !delivered.has(number));
       byId(`wire-${index}`).setAttribute('opacity', cut ? '0' : '1');
       byId(`split-${index}`).setAttribute('opacity', cut ? '1' : '0');
       byId(`signal-${index}`).setAttribute('fill', outage(entrance, floor, index) ? '#986b78' : '#a8dbad');
@@ -882,7 +983,7 @@
   }
 
   function toggleCable() {
-    if (climb || scene === 'street') return;
+    if (day !== 2 || climb || scene === 'street') return;
     let cut;
     if (scene === 'roof') {
       if (!near(mainCableX, 68)) return setGuidance('Подойдите к толстому кабелю под антенной.');
@@ -900,6 +1001,19 @@
     updateView();
   }
 
+  function deliverFlyer() {
+    if (climb || scene !== 'inside') return;
+    const door = nearestDoor();
+    if (door < 0) return setGuidance('Подойдите к двери, чтобы оставить листовку.');
+    const number = apartmentNumber(door);
+    if (!flyerTargets.includes(number)) return setGuidance('Этой двери нет в списке для листовок.');
+    if (delivered.has(number)) return setGuidance('Здесь уже есть листовка.');
+    delivered.add(number);
+    snipUntil = performance.now() + 330;
+    soundEffect('flyer');
+    updateView();
+  }
+
   function action(key) {
     if (key === 'ArrowUp') stairs(1);
     if (key === 'ArrowDown') stairs(-1);
@@ -907,7 +1021,8 @@
   }
 
   function interact() {
-    if (nearBench()) return requestCode('Бабушка на лавочке', null, 'В каком году родился генеральный директор телестудии «ТВ-Развилка» Иосиф Хаимович Гринберг?');
+    if (nearBench()) return requestCode('Бабушка на лавочке', null, 'В каком году был основан посёлок Развилка?');
+    if (day === 1) return deliverFlyer();
     const amp = nearbyAmplifier();
     if (amp) useAmplifier(amp);
     else toggleCable();
@@ -1001,13 +1116,26 @@
     if (event.detail > 0) event.currentTarget.blur();
   });
   byId('replay').addEventListener('click', () => {
-    entrances.forEach((rows) => rows.forEach((row) => row.fill(false)));
     startGame();
     byId('replay').blur();
+  });
+  byId('next-shift').addEventListener('click', () => {
+    if (day !== 1 || delivered.size !== flyerTargets.length) return;
+    remainingDebtors = flyerTargets.filter((number) => delivered.has(number) && !paidAfterNotice.has(number));
+    day = 2;
+    entrance = floor = 0;
+    quest.open = true;
+    goTo('street', streetDoors[0]);
+    byId('next-shift').blur();
   });
 
   function startGame() {
     entrance = floor = 0;
+    day = 1;
+    delivered.clear();
+    remainingDebtors = [];
+    complaintSequence = 0;
+    entrances.forEach((rows) => rows.forEach((row) => row.fill(false)));
     mainCut = false;
     quest.open = true;
     amplifiers.forEach((amp) => {
@@ -1025,14 +1153,15 @@
   function showTargets() {
     const door = scene === 'inside' && !climb ? nearestDoor() : -1;
     const cableCut = door >= 0 && currentFloor()[door];
+    const posted = door >= 0 && delivered.has(apartmentNumber(door));
     const entry = scene === 'street' ? nearbyEntrance() : -1;
     const atBench = nearBench();
     const atExit = scene === 'inside' && !climb && floor === 0 && near(exitX, exitReach);
     const atHatch = scene === 'roof' && near(hatchX, 85);
     const atCable = scene === 'roof' && near(mainCableX, 68);
-    const amp = nearbyAmplifier();
+    const amp = day === 2 ? nearbyAmplifier() : null;
     const atAmp = Boolean(amp);
-    const view = [scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered].join('/');
+    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
@@ -1041,10 +1170,11 @@
     byId('bench-target').setAttribute('opacity', atBench ? '.5' : '0');
     byId('exit-target').setAttribute('opacity', atExit ? '.8' : '0');
     byId('hatch-target').setAttribute('opacity', atHatch ? '.4' : '0');
-    byId('cable-target').setAttribute('opacity', atCable ? '.46' : '0');
+    byId('cable-target').setAttribute('opacity', day === 2 && atCable ? '.46' : '0');
     byId('amp-target').setAttribute('opacity', atAmp && amp.stage === 'closed' ? '.65' : '0');
-    actionButton.disabled = (scene === 'street' && !atBench) || Boolean(climb);
+    actionButton.disabled = (scene === 'street' && !atBench) || (scene === 'roof' && day === 1) || Boolean(climb);
     if (scene === 'street') actionButton.textContent = 'Поговорить';
+    else if (day === 1) actionButton.textContent = 'Наклеить листовку';
     else if (atAmp) actionButton.textContent = amplifierAction(amp);
     else if (scene === 'roof') actionButton.textContent = mainCut ? 'Починить главный кабель' : 'Обрезать главный кабель';
     else actionButton.textContent = cableCut ? 'Починить кабель' : 'Обрезать кабель';
@@ -1052,14 +1182,15 @@
     if (climb) return setGuidance(climb.toRoof ? 'Поднимаемся на крышу…' : climb.direction === 1 ? 'Поднимаемся по лестнице…' : 'Спускаемся по лестнице…');
     if (atBench) return setGuidance('Бабушка на лавочке · пробел или кнопка «Поговорить»');
     if (scene === 'street') {
-      if (entry === 0) return setGuidance('Подъезд 1 · ↑ войти. Бабушка с подсказкой сидит слева.');
+      if (entry === 0) return setGuidance('Подъезд 1 · ↑ войти. Бабушка сидит на лавочке слева.');
       return setGuidance(entry >= 0 ? `Подъезд ${entry + 1} · ↑ войти` : 'Подойдите к подъезду или к бабушке на лавочке слева.');
     }
     if (scene === 'roof') {
       if (atHatch) return setGuidance('Люк · ↓ спуститься на пятый этаж');
+      if (day === 1) return setGuidance('Сегодня разносите листовки по квартирам. Люк для спуска слева.');
       if (atCable && mainCut) return setGuidance('Главный кабель обрезан · пробел или кнопка, чтобы починить');
       if (mainCut) return setGuidance('Все квартиры отключены. Люк слева.');
-      if (atCable) return setGuidance('Главный кабель · пробел или кнопка, чтобы отключить весь дом');
+      if (atCable) return setGuidance('Главный кабель · его отключение лишит сигнала все квартиры.');
       return setGuidance('Главный кабель под антенной. Люк для спуска слева.');
     }
     if (atExit) return setGuidance('Выход на улицу · ↑ выйти');
@@ -1071,7 +1202,8 @@
       return setGuidance(`Металлический ящик · пробел или кнопка, чтобы ${amplifierAction(amp).toLowerCase()}`);
     }
     if (door >= 0) {
-      const label = `Квартира ${apartmentNumber(door)}`;
+      const label = hasDoorNumber(door) ? `Квартира ${apartmentNumber(door)}` : 'Дверь без номера';
+      if (day === 1) return setGuidance(posted ? `${label} · листовка уже наклеена.` : `${label} · пробел или кнопка, чтобы наклеить листовку.`);
       if (cableCut) return setGuidance(`${label} · пробел или кнопка, чтобы починить кабель.`);
       const source = outage(entrance, floor, door);
       if (source === 'roof') return setGuidance(`${label} · сигнал отключён на крыше.`);
@@ -1137,6 +1269,7 @@
     byId('arm').setAttribute('transform', `translate(-13 -94) rotate(${arm})`);
     drawSalute(now);
     playMusic();
+    updateComplaint(now);
     showTargets();
     requestAnimationFrame(animate);
   }
