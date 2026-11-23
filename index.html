@@ -49,6 +49,9 @@
   #next-shift{background:var(--gold);color:#302134;font-weight:700}
   .complaint{position:absolute;right:12px;bottom:12px;width:min(315px,calc(100% - 24px));padding:8px 11px;border:1px solid #b27c6f;border-radius:9px;background:#2d2434f2;color:#ffe2b5;font-size:.875rem;pointer-events:none}
   .complaint strong{display:block;color:#f5b3a1}
+  .service-task{margin:10px 0 0;padding:8px 11px;border:1px solid #b78b60;border-radius:8px;background:#473541;font-size:.875rem}
+  .service-task strong,.service-toast strong{color:#ffcf91}
+  .service-toast{top:12px;bottom:auto;border-color:#b78b60}
   .lock{width:min(340px,100% - 28px);max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
   .lock::backdrop{background:#211b2abf}
   .lock h2{margin:0;font:700 1.5rem Georgia,serif}
@@ -89,6 +92,9 @@
     <p id="shift" class="shift"></p>
     <ul id="quest-list" aria-label="Квартиры-должники"></ul>
   </details>
+  <div id="service-task" class="service-task" hidden>
+    <strong>Срочная заявка на проверку ТВ</strong> · <span id="service-address"></span>
+  </div>
   <div id="game-frame" class="frame intro-active">
     <svg id="scene" viewBox="0 0 1080 550" role="img" aria-label="Улица и серая пятиэтажка с четырьмя подъездами">
       <defs>
@@ -327,6 +333,10 @@
       <strong id="complaint-title"></strong>
       <span id="complaint-text"></span>
     </aside>
+    <aside id="service-toast" class="complaint service-toast" role="status" hidden>
+      <strong id="service-toast-title"></strong>
+      <span id="service-toast-text"></span>
+    </aside>
     <section id="intro" class="intro" aria-label="Вступление">
       <div>
         <p>Уважаемые абоненты посёлка Развилка, не забывайте вовремя оплачивать услуги антенной службы.</p>
@@ -418,6 +428,12 @@
     'Добрый день. Телевизор включается, а передачи не идут.',
     'Пропала картинка. Когда сможете восстановить телевидение?',
   ];
+  const servicePeriod = 120;
+  const serviceMessages = [
+    'Пожалуйста, проверьте ТВ. Сигнал пропал.',
+    'Всё ещё ждём монтажника. Телевизор пишет «Нет сигнала».',
+    'Повторная заявка. Телевидение пока не работает.',
+  ];
   const amplifierX = 165;
   const amplifiers = Array.from({length: 2}, () => ({stage: 'closed', powered: true}));
   const byId = (id) => document.getElementById(id);
@@ -469,6 +485,8 @@
   let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let day = 1, remainingDebtors = [], wrongApartments = [];
+  let serviceRequest = null, serviceClock = 0, serviceDueAt = servicePeriod;
+  let serviceReminderAt = 0, serviceToastUntil = 0, serviceMessageIndex = 0, lastServiceNumber = 0;
   let ladderCarried = false, apartmentJob = null, ladderMotion = null;
   let ladderHeight = 0;
   let lastComplaint = 0, visibleComplaint = 0, complaintAt = 0, complaintUntil = 0, complaintSequence = 0;
@@ -662,6 +680,7 @@
       <rect x="59" y="188" width="37" height="27" rx="2" fill="#55465b" stroke-width="1.6"/>
       <path id="wire-${index}" d="M63 203h20" stroke="#3c2e42" stroke-width="6"/>
       <path id="split-${index}" d="M67 203l-2-4m14 4 3 4" stroke="#f1ae75" stroke-width="2" opacity="0"/>
+      <circle id="box-light-${index}" cx="90" cy="196" r="3.4" fill="#a8dbad" stroke-width="1.5"/>
       <g id="door-box-closed-${index}">
         <rect x="56" y="185" width="43" height="33" rx="3" fill="#897780" stroke-width="2"/>
         <path d="M60 189h35m-7 12v5" stroke="#b3a0a5" stroke-width="1.8" stroke-linecap="round"/>
@@ -707,7 +726,11 @@
   }
 
   function apartmentNumber(door) {
-    return (entrance * entrances[entrance].length + floor) * centers.length + door + 1;
+    return numberAt(entrance, floor, door);
+  }
+
+  function numberAt(entry, level, door) {
+    return (entry * floorCount + level) * centers.length + door + 1;
   }
 
   function hasDoorNumber(door) {
@@ -785,7 +808,9 @@
   function outage(entry, level, door) {
     if (mainCut) return 'roof';
     if (entrances[entry][level][door]) return 'cable';
-    return amplifiers[Math.floor(entry / 2)].powered ? '' : 'amplifier';
+    if (!amplifiers[Math.floor(entry / 2)].powered) return 'amplifier';
+    if (serviceRequest?.number === numberAt(entry, level, door) && serviceRequest.step < 2) return 'service';
+    return '';
   }
 
   function localAmplifier() {
@@ -942,14 +967,14 @@
     byId('quest-progress').textContent = `· ${completed} из ${targets.length}`;
     byId('shift').textContent = flyersOnly ? 'День 1 · Наклейте уведомления на двери квартир из списка.' :
       `День 2 · После уведомлений оплатили ${delivered.size - remainingDebtors.length} квартиры. Отключите только квартиры из нового списка.`;
-    byId('flyer-finish').hidden = !flyersOnly || completed !== targets.length;
-    wrongApartments = flyersOnly ? [] : outages.flatMap((outage, index) => outage && !remainingDebtors.includes(index + 1) ? [index + 1] : []);
+    byId('flyer-finish').hidden = !flyersOnly || completed !== targets.length || Boolean(serviceRequest);
+    wrongApartments = flyersOnly ? [] : outages.flatMap((outage, index) => outage && outage !== 'service' && !remainingDebtors.includes(index + 1) ? [index + 1] : []);
     if (!wrongApartments.includes(visibleComplaint)) hideComplaint();
     if (!wrongApartments.length) {
       lastComplaint = 0;
       complaintAt = 0;
     }
-    const hideWin = flyersOnly || completed !== targets.length || wrongApartments.length > 0 || Boolean(apartmentJob);
+    const hideWin = flyersOnly || completed !== targets.length || wrongApartments.length > 0 || Boolean(apartmentJob || serviceRequest);
     if (win.hidden !== hideWin) {
       win.hidden = hideWin;
       saluteStart = hideWin ? null : performance.now();
@@ -965,7 +990,7 @@
 
   function updateComplaint(now) {
     if (visibleComplaint && now >= complaintUntil) hideComplaint();
-    if (!wrongApartments.length || now < complaintAt || lock.open || document.hidden) return;
+    if (!wrongApartments.length || now < complaintAt || lock.open || document.hidden || !byId('service-toast').hidden) return;
     const apartment = wrongApartments.find((number) => number > lastComplaint) ?? wrongApartments[0];
     lastComplaint = apartment;
     visibleComplaint = apartment;
@@ -976,6 +1001,74 @@
     complaintSequence++;
     byId('complaint').hidden = false;
     soundEffect('complaint');
+  }
+
+  function newServiceRequest() {
+    const candidates = [];
+    entrances.forEach((levels, entry) => {
+      if (entry === entrance) return;
+      levels.forEach((doors, level) => {
+        if (level < 3) return;
+        doors.forEach((_, door) => {
+          const number = numberAt(entry, level, door);
+          if (!flyerTargets.includes(number) && !outage(entry, level, door)) candidates.push({entry, level, door, number});
+        });
+      });
+    });
+    const next = candidates.find(({number}) => number > lastServiceNumber) ?? candidates[0];
+    if (!next) return;
+    serviceRequest = {...next, step: 0};
+    lastServiceNumber = next.number;
+    serviceMessageIndex = 0;
+    serviceReminderAt = serviceClock;
+    updateView();
+  }
+
+  function serviceAddress() {
+    const {entry, level, number} = serviceRequest;
+    return `Подъезд ${entry + 1} · этаж ${level + 1} · квартира ${number}`;
+  }
+
+  function updateService(delta) {
+    if (!playing || document.hidden) return;
+    if (!serviceRequest && (!win.hidden || !byId('flyer-finish').hidden)) return;
+    serviceClock += delta;
+    if (!serviceRequest && serviceClock >= serviceDueAt && !apartmentJob && !lock.open) {
+      serviceDueAt = serviceClock + 5;
+      newServiceRequest();
+    }
+    if (!serviceRequest) return;
+    if (serviceClock >= serviceToastUntil) byId('service-toast').hidden = true;
+    if (serviceClock < serviceReminderAt) return;
+    byId('service-toast-title').textContent = `Поддержка ТВ · квартира ${serviceRequest.number}`;
+    byId('service-toast-text').textContent = serviceRequest.step === 2 ? 'Сигнал вернулся. Закройте ящик, чтобы завершить заявку.' :
+      serviceMessages[serviceMessageIndex++ % serviceMessages.length];
+    byId('service-toast').hidden = false;
+    serviceToastUntil = serviceClock + 4.8;
+    serviceReminderAt = serviceClock + 12;
+    soundEffect('complaint');
+  }
+
+  function serviceAtDoor(door) {
+    return serviceRequest && scene === 'inside' && !climb && entrance === serviceRequest.entry &&
+      floor === serviceRequest.level && door === serviceRequest.door;
+  }
+
+  function inspectServiceBox() {
+    if (serviceRequest.step === 0) {
+      held.clear();
+      serviceRequest.step = 1;
+      soundEffect('click');
+    } else if (serviceRequest.step === 1) {
+      serviceRequest.step = 2;
+      soundEffect('repair');
+    } else {
+      serviceRequest = null;
+      serviceDueAt = serviceClock + servicePeriod;
+      byId('service-toast').hidden = true;
+      soundEffect('unlock');
+    }
+    updateView();
   }
 
   function drawSalute(now) {
@@ -1023,10 +1116,12 @@
     byId('scene').setAttribute('aria-label', scene === 'inside' ? `${scenes.inside.label}. ${stairsLabel}` : scenes[scene].label);
     for (const name of Object.keys(scenes)) byId(name).toggleAttribute('hidden', name !== scene);
     const outages = entrances.flatMap((levels, entry) => levels.flatMap((row, level) => row.map((_, door) => outage(entry, level, door))));
-    disconnectedCount = outages.filter(Boolean).length;
+    disconnectedCount = outages.filter((fault) => fault && fault !== 'service').length;
     byId('score-label').textContent = day === 1 ? 'Листовки' : 'Отключено квартир';
     byId('score').textContent = day === 1 ? `${delivered.size} / ${flyerTargets.length}` : `${disconnectedCount} / ${totalApartments}`;
     updateQuest(outages);
+    byId('service-task').hidden = !serviceRequest;
+    if (serviceRequest) byId('service-address').textContent = serviceAddress();
     byId('exit-door').toggleAttribute('hidden', floor !== 0);
     byId('stairs-down').toggleAttribute('hidden', floor === 0);
     byId('stairs-gate').toggleAttribute('hidden', !upClosed);
@@ -1054,7 +1149,8 @@
       const number = apartmentNumber(index);
       const obstacle = obstacles[number];
       const job = apartmentJob?.door === index ? apartmentJob : null;
-      const open = Boolean(job && (job.step === 4 || job.step === 5));
+      const serviceBoxOpen = serviceRequest?.number === number && serviceRequest.step > 0;
+      const open = Boolean(serviceBoxOpen || (job && (job.step === 4 || job.step === 5)));
       byId(`apartment-${index}`).textContent = number;
       byId(`apartment-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
       byId(`plate-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
@@ -1067,7 +1163,9 @@
       for (const group of clutter.children) group.toggleAttribute('hidden', group.dataset.obstacle !== obstacle);
       byId(`wire-${index}`).setAttribute('opacity', cut ? '0' : '1');
       byId(`split-${index}`).setAttribute('opacity', cut ? '1' : '0');
-      byId(`signal-${index}`).setAttribute('fill', outage(entrance, floor, index) ? '#986b78' : '#a8dbad');
+      const signalColor = outage(entrance, floor, index) ? '#665262' : '#a8dbad';
+      byId(`signal-${index}`).setAttribute('fill', signalColor);
+      byId(`box-light-${index}`).setAttribute('fill', signalColor);
     });
     updateEquipment();
   }
@@ -1084,7 +1182,7 @@
   }
 
   function stairs(direction) {
-    if (climb || apartmentJob) return;
+    if (climb || apartmentJob || serviceRequest?.step > 0) return;
     if (scene === 'street') {
       if (direction !== 1) return;
       const door = nearbyEntrance();
@@ -1190,6 +1288,10 @@
       updateView();
       return;
     }
+    if (serviceRequest) {
+      if (serviceAtDoor(nearestDoor())) return inspectServiceBox();
+      return setGuidance(`Сначала проверьте заявку. ${serviceAddress()}.`);
+    }
     if (day === 1) return deliverFlyer();
     if (apartmentJob) return workOnApartment();
     const amp = nearbyAmplifier();
@@ -1199,7 +1301,7 @@
   }
 
   function hold(key) {
-    if (climb || apartmentJob || held.has(key)) return;
+    if (climb || apartmentJob || serviceRequest?.step > 0 || held.has(key)) return;
     const direction = key === 'ArrowLeft' ? -1 : 1;
     face = direction;
     const nextX = limitX(x + direction * 13 * pace());
@@ -1290,7 +1392,7 @@
     byId('replay').blur();
   });
   byId('next-shift').addEventListener('click', () => {
-    if (day !== 1 || delivered.size !== flyerTargets.length) return;
+    if (day !== 1 || delivered.size !== flyerTargets.length || serviceRequest) return;
     remainingDebtors = flyerTargets.filter((number) => delivered.has(number) && !paidAfterNotice.has(number));
     day = 2;
     entrance = floor = 0;
@@ -1303,6 +1405,11 @@
   function startGame() {
     entrance = floor = 0;
     day = 1;
+    serviceRequest = null;
+    serviceClock = 0;
+    serviceDueAt = servicePeriod;
+    lastServiceNumber = 0;
+    byId('service-toast').hidden = true;
     ladderCarried = false;
     apartmentJob = null;
     ladderMotion = null;
@@ -1333,12 +1440,13 @@
     const atBench = nearBench();
     const atLadder = atStreetLadder();
     const atStairs = nearStairs();
+    const atService = serviceAtDoor(door);
     const atExit = scene === 'inside' && !climb && floor === 0 && near(exitX, exitReach);
     const atHatch = scene === 'roof' && near(hatchX, 85);
     const atCable = scene === 'roof' && near(mainCableX, 68);
     const amp = day === 2 && !apartmentJob ? nearbyAmplifier() : null;
     const atAmp = Boolean(amp);
-    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, atStairs, ladderCarried, apartmentJob?.step, Boolean(ladderMotion)].join('/');
+    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, atStairs, ladderCarried, apartmentJob?.step, Boolean(ladderMotion), serviceRequest?.number, serviceRequest?.step].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
@@ -1353,6 +1461,8 @@
     actionButton.disabled = (scene === 'street' && !atBench && !atLadder) || (scene === 'roof' && day === 1) || Boolean(climb || ladderMotion);
     if (atLadder) actionButton.textContent = ladderCarried ? 'Оставить стремянку' : 'Взять стремянку';
     else if (scene === 'street') actionButton.textContent = 'Поговорить';
+    else if (atService) actionButton.textContent = ['Открыть ящик', 'Включить ТВ', 'Закрыть ящик'][serviceRequest.step];
+    else if (serviceRequest) actionButton.textContent = 'Сначала заявка';
     else if (day === 1) actionButton.textContent = 'Наклеить листовку';
     else if (atAmp) actionButton.textContent = amplifierAction(amp);
     else if (scene === 'roof') actionButton.textContent = mainCut ? 'Починить главный кабель' : 'Обрезать главный кабель';
@@ -1374,6 +1484,8 @@
       return setGuidance('Главный кабель под антенной. Люк для спуска слева.');
     }
     if (atExit) return setGuidance('Выход на улицу · ↑ выйти');
+    if (atService) return setGuidance(`Квартира ${serviceRequest.number} · ${actionButton.textContent}`);
+    if (serviceRequest && door >= 0) return setGuidance(`Сначала проверьте ТВ по заявке. ${serviceAddress()}.`);
     if (atAmp) {
       if (amp.stage === 'used') {
         const affected = entrance === 1 ? '1 и 2' : '3 и 4';
@@ -1458,6 +1570,7 @@
     byId('arm').setAttribute('transform', `translate(-13 -94) rotate(${arm})`);
     drawSalute(now);
     playMusic();
+    updateService(delta);
     updateComplaint(now);
     showTargets();
     requestAnimationFrame(animate);
