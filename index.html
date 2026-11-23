@@ -58,6 +58,7 @@
   #service-list li[data-done="true"]{background:#34453e;color:#cbe3c3}
   #service-list strong{display:block;color:#ffcf91}
   #service-list li[data-done="true"] strong{color:inherit}
+  #service-blocking{margin:7px 0 0;color:#ffcf91;font-size:.875rem}
   .service-toast strong{color:#ffcf91}
   .service-toast{top:12px;bottom:auto;border-color:#b78b60}
   .lock{width:min(340px,100% - 28px);max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
@@ -105,6 +106,7 @@
       <h2 id="service-heading">Заявки на проверку ТВ</h2>
       <p id="service-empty">Заявок пока нет.</p>
       <ul id="service-list" aria-live="polite"></ul>
+      <p id="service-blocking" role="status" hidden>Пока есть активные заявки, нельзя клеить листовки и отключать абонентов.</p>
     </section>
   </div>
   <div id="game-frame" class="frame intro-active">
@@ -1046,6 +1048,7 @@
   function renderServiceList() {
     const requests = serviceRequest ? [serviceRequest, ...completedService] : completedService;
     byId('service-empty').hidden = requests.length > 0;
+    byId('service-blocking').hidden = !serviceRequest;
     byId('service-list').innerHTML = requests.map((request) => {
       const done = request !== serviceRequest;
       const label = done ? '✓ Выполнена' : 'Срочная · проверить ТВ';
