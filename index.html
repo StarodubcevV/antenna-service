@@ -381,6 +381,7 @@
   const benchX = 107;
   const ladderX = 320;
   const walkingSpeed = 370;
+  const stairsX = 170;
   const exitX = 1033, exitReach = 40, hatchX = 169, mainCableX = 691;
   const floorCount = 5;
   const totalApartments = streetDoors.length * floorCount * centers.length;
@@ -740,6 +741,10 @@
     return scene === 'street' && near(benchX, 44);
   }
 
+  function nearStairs() {
+    return scene === 'inside' && near(stairsX, 60);
+  }
+
   function near(point, distance) {
     return Math.abs(x - point) <= distance;
   }
@@ -1063,9 +1068,10 @@
     if (scene === 'roof') {
       if (direction !== -1) return;
       if (!near(hatchX, 85)) return setGuidance('Вернитесь к люку слева, чтобы спуститься.');
-      return goTo('inside', 170);
+      return goTo('inside', stairsX);
     }
     if (floor === 0 && direction === 1 && near(exitX, exitReach)) return goTo('street', streetDoors[entrance]);
+    if (direction === 1 && !nearStairs()) return setGuidance('Чтобы подняться, подойдите к лестнице слева и нажмите ↑.');
     const next = floor + direction;
     if (next < 0) return setGuidance('Вы на первом этаже. Выход на улицу справа.');
     const toRoof = next === floorCount && roofAccess();
@@ -1298,12 +1304,13 @@
     const entry = scene === 'street' ? nearbyEntrance() : -1;
     const atBench = nearBench();
     const atLadder = atStreetLadder();
+    const atStairs = nearStairs();
     const atExit = scene === 'inside' && !climb && floor === 0 && near(exitX, exitReach);
     const atHatch = scene === 'roof' && near(hatchX, 85);
     const atCable = scene === 'roof' && near(mainCableX, 68);
     const amp = day === 2 && !apartmentJob ? nearbyAmplifier() : null;
     const atAmp = Boolean(amp);
-    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, ladderCarried, apartmentJob?.step, Boolean(ladderMotion)].join('/');
+    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, atStairs, ladderCarried, apartmentJob?.step, Boolean(ladderMotion)].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
@@ -1358,10 +1365,10 @@
       if (source === 'amplifier') return setGuidance(`${label} · усилитель выключен.`);
       return setGuidance(`${label} · ${jobLabel(door)}`);
     }
-    if (roofAccess()) return setGuidance('↑ кодовый замок чердака · ↓ спуститься на четвёртый этаж');
+    if (roofAccess()) return setGuidance(atStairs ? '↑ кодовый замок чердака · ↓ спуститься на четвёртый этаж' : 'Вход на чердак у лестницы слева.');
     if (floor === floorCount - 1) return setGuidance('Верхний пролёт закрыт · ↓ спуститься на четвёртый этаж');
-    if (floor === 0) return setGuidance('↑ этаж выше · выход на улицу справа');
-    return setGuidance('← → ходьба · ↑ ↓ смена этажа · пробел у двери');
+    if (floor === 0) return setGuidance(atStairs ? '↑ этаж выше · выход на улицу справа' : 'Лестница слева · выход на улицу справа');
+    return setGuidance(atStairs ? '↑ этаж выше · ↓ этаж ниже' : 'Лестница вверх слева · ↓ этаж ниже');
   }
 
   function animate(now) {
@@ -1369,16 +1376,16 @@
     previousTime = now;
     let footY = scenes[scene].footY, walking = false, opacity = 1;
     if (climb) {
-      const approach = Math.abs(climb.from - 170) / (810 * climb.pace);
+      const approach = Math.abs(climb.from - stairsX) / (810 * climb.pace);
       const elapsed = (now - climb.start) / 1000;
       const duration = (climb.toRoof ? .9 : .55) / climb.pace;
       const progress = Math.min(1, Math.max(0, (elapsed - approach) / duration));
       walking = true;
       if (elapsed < approach) {
-        x = climb.from + (170 - climb.from) * (elapsed / approach);
-        face = -1;
+        x = climb.from + (stairsX - climb.from) * (elapsed / approach);
+        face = Math.sign(stairsX - climb.from);
       } else {
-        x = 170 - (climb.toRoof ? Math.min(45, 145 * progress) : 160 * progress);
+        x = stairsX - (climb.toRoof ? Math.min(45, 145 * progress) : 160 * progress);
         const rise = climb.toRoof ? 406 : climb.direction === 1 ? 115 : -66;
         footY -= rise * progress;
         face = -1;
@@ -1389,7 +1396,7 @@
           goTo('roof', hatchX + 27);
         } else {
           floor = climb.next;
-          goTo('inside', 170);
+          goTo('inside', stairsX);
         }
         footY = scenes[scene].footY;
         opacity = 1;
