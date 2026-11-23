@@ -39,7 +39,8 @@
   .intro{position:absolute;inset:0;display:flex;align-items:center;padding:clamp(15px,5vw,60px);background:linear-gradient(90deg,#211b2af7,#211b2ad6 45%,#211b2a44)}
   .intro p{max-width:20em;margin:0 0 18px;font:700 clamp(1.1rem,3.4vw,2.4rem)/1.2 Georgia,serif}
   #start{background:var(--gold);color:#302134;font-weight:700}
-  .quest{margin-top:12px;padding:8px 11px;background:#332839;border:1px solid #967263;border-radius:10px}
+  .work-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px;margin-top:12px}
+  .quest,.service-task{padding:8px 11px;background:#332839;border:1px solid #967263;border-radius:10px}
   .quest summary{font-weight:700;cursor:pointer}
   #quest-progress{color:var(--muted);margin-left:4px}
   .quest ul{display:flex;flex-wrap:wrap;gap:5px;list-style:none;margin:8px 0 0;padding:0}
@@ -49,8 +50,15 @@
   #next-shift{background:var(--gold);color:#302134;font-weight:700}
   .complaint{position:absolute;right:12px;bottom:12px;width:min(315px,calc(100% - 24px));padding:8px 11px;border:1px solid #b27c6f;border-radius:9px;background:#2d2434f2;color:#ffe2b5;font-size:.875rem;pointer-events:none}
   .complaint strong{display:block;color:#f5b3a1}
-  .service-task{margin:10px 0 0;padding:8px 11px;border:1px solid #b78b60;border-radius:8px;background:#473541;font-size:.875rem}
-  .service-task strong,.service-toast strong{color:#ffcf91}
+  .service-task h2{margin:0;font:700 1rem/1.2 system-ui,sans-serif}
+  #service-empty{margin:7px 0 0;color:var(--muted);font-size:.875rem}
+  #service-list{display:grid;gap:5px;max-height:10.5rem;overflow:auto;list-style:none;margin:7px 0 0;padding:0;font-size:.875rem}
+  #service-list:empty{display:none}
+  #service-list li{padding:5px 7px;background:#473541;border-radius:5px}
+  #service-list li[data-done="true"]{background:#34453e;color:#cbe3c3}
+  #service-list strong{display:block;color:#ffcf91}
+  #service-list li[data-done="true"] strong{color:inherit}
+  .service-toast strong{color:#ffcf91}
   .service-toast{top:12px;bottom:auto;border-color:#b78b60}
   .lock{width:min(340px,100% - 28px);max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
   .lock::backdrop{background:#211b2abf}
@@ -87,13 +95,17 @@
     <div><p class="studio">Телестудия «ТВ-Развилка»</p><h1>Антенная служба</h1></div>
     <div class="score"><span id="score-label">Листовки</span> <strong id="score">0 / 12</strong></div>
   </header>
-  <details id="quest" class="quest" open hidden>
-    <summary><span id="quest-task">Разнесите листовки</span> <span id="quest-progress"></span></summary>
-    <p id="shift" class="shift"></p>
-    <ul id="quest-list" aria-label="Квартиры-должники"></ul>
-  </details>
-  <div id="service-task" class="service-task" hidden>
-    <strong>Срочная заявка на проверку ТВ</strong> · <span id="service-address"></span>
+  <div id="work-board" class="work-board" hidden>
+    <details id="quest" class="quest" open>
+      <summary><span id="quest-task">Разнесите листовки</span> <span id="quest-progress"></span></summary>
+      <p id="shift" class="shift"></p>
+      <ul id="quest-list" aria-label="Квартиры-должники"></ul>
+    </details>
+    <section id="service-task" class="service-task" aria-labelledby="service-heading">
+      <h2 id="service-heading">Заявки на проверку ТВ</h2>
+      <p id="service-empty">Заявок пока нет.</p>
+      <ul id="service-list" aria-live="polite"></ul>
+    </section>
   </div>
   <div id="game-frame" class="frame intro-active">
     <svg id="scene" viewBox="0 0 1080 550" role="img" aria-label="Улица и серая пятиэтажка с четырьмя подъездами">
@@ -485,6 +497,7 @@
   let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let day = 1, remainingDebtors = [], wrongApartments = [];
+  const completedService = [];
   let serviceRequest = null, serviceClock = 0, serviceDueAt = servicePeriod;
   let serviceReminderAt = 0, serviceToastUntil = 0, serviceMessageIndex = 0, lastServiceNumber = 0;
   let ladderCarried = false, apartmentJob = null, ladderMotion = null;
@@ -759,7 +772,7 @@
       place: 'Поставить стремянку',
       climb: 'Подняться на стремянку',
       open: 'Открыть ящик над квартирой',
-      cable: currentFloor()[door] ? 'Починить кабель' : 'Отключить квартиру',
+      cable: serviceAtDoor(door) ? 'Включить ТВ' : currentFloor()[door] ? 'Починить кабель' : 'Отключить квартиру',
       close: 'Закрыть ящик над квартирой',
       descend: 'Спуститься со стремянки',
       take: 'Взять стремянку',
@@ -809,7 +822,7 @@
     if (mainCut) return 'roof';
     if (entrances[entry][level][door]) return 'cable';
     if (!amplifiers[Math.floor(entry / 2)].powered) return 'amplifier';
-    if (serviceRequest?.number === numberAt(entry, level, door) && serviceRequest.step < 2) return 'service';
+    if (serviceRequest?.number === numberAt(entry, level, door) && !serviceRequest.restored) return 'service';
     return '';
   }
 
@@ -1017,16 +1030,27 @@
     });
     const next = candidates.find(({number}) => number > lastServiceNumber) ?? candidates[0];
     if (!next) return;
-    serviceRequest = {...next, step: 0};
+    serviceRequest = {...next, day, restored: false};
     lastServiceNumber = next.number;
     serviceMessageIndex = 0;
     serviceReminderAt = serviceClock;
+    renderServiceList();
     updateView();
   }
 
-  function serviceAddress() {
-    const {entry, level, number} = serviceRequest;
+  function serviceAddress(request = serviceRequest) {
+    const {entry, level, number} = request;
     return `Подъезд ${entry + 1} · этаж ${level + 1} · квартира ${number}`;
+  }
+
+  function renderServiceList() {
+    const requests = serviceRequest ? [serviceRequest, ...completedService] : completedService;
+    byId('service-empty').hidden = requests.length > 0;
+    byId('service-list').innerHTML = requests.map((request) => {
+      const done = request !== serviceRequest;
+      const label = done ? '✓ Выполнена' : 'Срочная · проверить ТВ';
+      return `<li data-done="${done}"><strong>${label}</strong><span>День ${request.day} · ${serviceAddress(request)}</span></li>`;
+    }).join('');
   }
 
   function updateService(delta) {
@@ -1041,7 +1065,7 @@
     if (serviceClock >= serviceToastUntil) byId('service-toast').hidden = true;
     if (serviceClock < serviceReminderAt) return;
     byId('service-toast-title').textContent = `Поддержка ТВ · квартира ${serviceRequest.number}`;
-    byId('service-toast-text').textContent = serviceRequest.step === 2 ? 'Сигнал вернулся. Закройте ящик, чтобы завершить заявку.' :
+    byId('service-toast-text').textContent = serviceRequest.restored ? 'Сигнал вернулся. Завершите работу у ящика.' :
       serviceMessages[serviceMessageIndex++ % serviceMessages.length];
     byId('service-toast').hidden = false;
     serviceToastUntil = serviceClock + 4.8;
@@ -1054,21 +1078,13 @@
       floor === serviceRequest.level && door === serviceRequest.door;
   }
 
-  function inspectServiceBox() {
-    if (serviceRequest.step === 0) {
-      held.clear();
-      serviceRequest.step = 1;
-      soundEffect('click');
-    } else if (serviceRequest.step === 1) {
-      serviceRequest.step = 2;
-      soundEffect('repair');
-    } else {
-      serviceRequest = null;
-      serviceDueAt = serviceClock + servicePeriod;
-      byId('service-toast').hidden = true;
-      soundEffect('unlock');
-    }
-    updateView();
+  function finishService() {
+    completedService.unshift(serviceRequest);
+    serviceRequest = null;
+    serviceDueAt = serviceClock + servicePeriod;
+    byId('service-toast').hidden = true;
+    soundEffect('unlock');
+    renderServiceList();
   }
 
   function drawSalute(now) {
@@ -1120,8 +1136,6 @@
     byId('score-label').textContent = day === 1 ? 'Листовки' : 'Отключено квартир';
     byId('score').textContent = day === 1 ? `${delivered.size} / ${flyerTargets.length}` : `${disconnectedCount} / ${totalApartments}`;
     updateQuest(outages);
-    byId('service-task').hidden = !serviceRequest;
-    if (serviceRequest) byId('service-address').textContent = serviceAddress();
     byId('exit-door').toggleAttribute('hidden', floor !== 0);
     byId('stairs-down').toggleAttribute('hidden', floor === 0);
     byId('stairs-gate').toggleAttribute('hidden', !upClosed);
@@ -1149,8 +1163,7 @@
       const number = apartmentNumber(index);
       const obstacle = obstacles[number];
       const job = apartmentJob?.door === index ? apartmentJob : null;
-      const serviceBoxOpen = serviceRequest?.number === number && serviceRequest.step > 0;
-      const open = Boolean(serviceBoxOpen || (job && (job.step === 4 || job.step === 5)));
+      const open = Boolean(job && (job.step === 4 || job.step === 5));
       byId(`apartment-${index}`).textContent = number;
       byId(`apartment-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
       byId(`plate-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
@@ -1182,7 +1195,7 @@
   }
 
   function stairs(direction) {
-    if (climb || apartmentJob || serviceRequest?.step > 0) return;
+    if (climb || apartmentJob) return;
     if (scene === 'street') {
       if (direction !== 1) return;
       const door = nearbyEntrance();
@@ -1225,10 +1238,11 @@
     soundEffect('step');
   }
 
-  function workOnApartment() {
-    if (day !== 2 || scene !== 'inside' || climb || ladderMotion) return;
+  function workOnApartment(service = false) {
+    if ((!service && day !== 2) || scene !== 'inside' || climb || ladderMotion) return;
     const door = apartmentJob?.door ?? nearestDoor();
     if (door < 0) return setGuidance('Подойдите к двери квартиры.');
+    if (service && !serviceAtDoor(door)) return;
     if (!ladderCarried && !apartmentJob) return setGuidance('Возьмите стремянку во дворе между первым и вторым подъездами.');
     const obstacle = obstacles[apartmentNumber(door)];
     if (!apartmentJob) {
@@ -1246,9 +1260,14 @@
     } else if (step === 'descend') {
       startLadderMove(0);
     } else if (step === 'cable') {
-      const cables = currentFloor();
-      cables[door] = !cables[door];
-      soundEffect(cables[door] ? 'cut' : 'repair');
+      if (service) {
+        serviceRequest.restored = true;
+        soundEffect('repair');
+      } else {
+        const cables = currentFloor();
+        cables[door] = !cables[door];
+        soundEffect(cables[door] ? 'cut' : 'repair');
+      }
       snipUntil = performance.now() + 330;
     } else if (step === 'take') {
       ladderCarried = true;
@@ -1256,8 +1275,10 @@
     } else {
       soundEffect(step === 'open' || step === 'close' ? 'click' : 'door');
     }
-    if (step === 'restore' || (step === 'take' && !obstacle)) apartmentJob = null;
-    else apartmentJob.step++;
+    if (step === 'restore' || (step === 'take' && !obstacle)) {
+      apartmentJob = null;
+      if (service) finishService();
+    } else apartmentJob.step++;
     updateView();
   }
 
@@ -1289,7 +1310,7 @@
       return;
     }
     if (serviceRequest) {
-      if (serviceAtDoor(nearestDoor())) return inspectServiceBox();
+      if (serviceAtDoor(apartmentJob?.door ?? nearestDoor())) return workOnApartment(true);
       return setGuidance(`Сначала проверьте заявку. ${serviceAddress()}.`);
     }
     if (day === 1) return deliverFlyer();
@@ -1301,7 +1322,7 @@
   }
 
   function hold(key) {
-    if (climb || apartmentJob || serviceRequest?.step > 0 || held.has(key)) return;
+    if (climb || apartmentJob || held.has(key)) return;
     const direction = key === 'ArrowLeft' ? -1 : 1;
     face = direction;
     const nextX = limitX(x + direction * 13 * pace());
@@ -1375,7 +1396,7 @@
     byId('intro').hidden = true;
     byId('game-frame').classList.remove('intro-active');
     byId('controls').hidden = false;
-    quest.hidden = false;
+    byId('work-board').hidden = false;
     status.hidden = false;
     byId('start').blur();
   });
@@ -1406,6 +1427,8 @@
     entrance = floor = 0;
     day = 1;
     serviceRequest = null;
+    completedService.length = 0;
+    renderServiceList();
     serviceClock = 0;
     serviceDueAt = servicePeriod;
     lastServiceNumber = 0;
@@ -1446,7 +1469,7 @@
     const atCable = scene === 'roof' && near(mainCableX, 68);
     const amp = day === 2 && !apartmentJob ? nearbyAmplifier() : null;
     const atAmp = Boolean(amp);
-    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, atStairs, ladderCarried, apartmentJob?.step, Boolean(ladderMotion), serviceRequest?.number, serviceRequest?.step].join('/');
+    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, atStairs, ladderCarried, apartmentJob?.step, Boolean(ladderMotion), serviceRequest?.number, serviceRequest?.restored].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
@@ -1461,7 +1484,7 @@
     actionButton.disabled = (scene === 'street' && !atBench && !atLadder) || (scene === 'roof' && day === 1) || Boolean(climb || ladderMotion);
     if (atLadder) actionButton.textContent = ladderCarried ? 'Оставить стремянку' : 'Взять стремянку';
     else if (scene === 'street') actionButton.textContent = 'Поговорить';
-    else if (atService) actionButton.textContent = ['Открыть ящик', 'Включить ТВ', 'Закрыть ящик'][serviceRequest.step];
+    else if (atService) actionButton.textContent = jobLabel(door);
     else if (serviceRequest) actionButton.textContent = 'Сначала заявка';
     else if (day === 1) actionButton.textContent = 'Наклеить листовку';
     else if (atAmp) actionButton.textContent = amplifierAction(amp);
@@ -1484,7 +1507,10 @@
       return setGuidance('Главный кабель под антенной. Люк для спуска слева.');
     }
     if (atExit) return setGuidance('Выход на улицу · ↑ выйти');
-    if (atService) return setGuidance(`Квартира ${serviceRequest.number} · ${actionButton.textContent}`);
+    if (atService) {
+      if (!ladderCarried && !apartmentJob) return setGuidance('Для заявки нужна стремянка. Возьмите её во дворе между первым и вторым подъездами.');
+      return setGuidance(`Квартира ${serviceRequest.number} · ${actionButton.textContent}`);
+    }
     if (serviceRequest && door >= 0) return setGuidance(`Сначала проверьте ТВ по заявке. ${serviceAddress()}.`);
     if (atAmp) {
       if (amp.stage === 'used') {
