@@ -25,6 +25,7 @@
   #cut:disabled{opacity:.53;cursor:default}
   .actions{gap:5px}
   .control-meta{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+  #ladder-status{color:var(--muted);font-size:.875rem}
   #sound-toggle{min-height:36px;font-size:.875rem}
   .directions{display:flex;gap:5px}
   .direction{min-width:40px;touch-action:none}
@@ -106,6 +107,14 @@
         <filter id="dim-worker" color-interpolation-filters="sRGB">
           <feComponentTransfer><feFuncR type="linear" slope=".68"/><feFuncG type="linear" slope=".72"/><feFuncB type="linear" slope=".83"/></feComponentTransfer>
         </filter>
+        <g id="ladder-shape" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M-15-141 36 0M13-141-36 0" fill="none" stroke="#483848" stroke-width="6"/>
+          <path d="M-15-142-29 0M15-142 29 0" fill="none" stroke="#483848" stroke-width="9"/>
+          <path d="M-15-141-29-2M15-141 29-2" fill="none" stroke="#c58e5d" stroke-width="5"/>
+          <path d="M-17-117h34m-36 24h38m-41 24h44m-47 24h50m-52 24h54" fill="none" stroke="#3e3345" stroke-width="7"/>
+          <path d="M-17-118h34m-36 24h38m-41 24h44m-47 24h50m-52 24h54" fill="none" stroke="#e0ae76" stroke-width="3.6"/>
+          <path d="M-17-150h34l5 11h-44Z" fill="#e2aa72" stroke="#483848" stroke-width="3"/>
+        </g>
         <pattern id="speckles" width="59" height="47" patternUnits="userSpaceOnUse"><path d="M7 5h2m16 14h1m22-11h2m-12 26h3m-33 5h1m19 4h1m23 1h2" stroke="#ffe1bd" stroke-opacity=".15" stroke-linecap="round"/></pattern>
         <pattern id="tiles" width="145" height="115" patternUnits="userSpaceOnUse" patternTransform="skewX(-26)"><path d="M0 0H145V115" fill="none" stroke="#30283d" stroke-width="3" opacity=".55"/></pattern>
         <g id="skyline">
@@ -191,6 +200,7 @@
         <rect id="amp-target" x="144" y="157" width="42" height="55" rx="3" fill="none" stroke="#ffcf91" stroke-width="2" opacity="0"/>
       </g>
       <g id="doors"></g>
+      <use id="ladder-placed" href="#ladder-shape" hidden=""/>
       <g id="exit-door" stroke="#342631" stroke-width="4" stroke-linejoin="round">
         <path d="M997 453V278h72v175Z" fill="#423647"/>
         <path d="M1005 450V286h56v164Z" fill="#6d6468"/>
@@ -235,6 +245,8 @@
           <path d="M1005 368q-13-14 4-29-6-20 13-22 9-21 24-7 19-3 22 17 17 7 12 25 0 30-41 28-31 4-34-12Z" fill="#535c56"/>
         </g>
         <path d="M0 480H1080V550H0Z" fill="url(#speckles)"/>
+        <ellipse id="ladder-target" cx="320" cy="487" rx="40" ry="10" fill="#ffcf91" opacity="0"/>
+        <use id="ladder-street" href="#ladder-shape" transform="translate(320 483) scale(.57)"/>
         <g stroke="#453745" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <ellipse id="bench-target" cx="107" cy="487" rx="48" ry="10" fill="#ffcf91" opacity="0" stroke="none"/>
           <path d="M61 470v15m81-15v15m-76-45v27m71-27v27" fill="none" stroke-width="4"/>
@@ -286,6 +298,7 @@
       </g>
       <g id="worker" stroke="#342631" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
         <ellipse cy="0" rx="30" ry="7" fill="#2d2539" opacity=".55" stroke="none"/>
+        <use id="ladder-carried" href="#ladder-shape" transform="translate(-32 -41) rotate(-22) scale(.72)" hidden=""/>
         <g id="rig">
           <g id="farLeg" transform="translate(9 -45)"><path d="M-8-3H9L7 32h9q7 1 7 10H-9Z" fill="#645164"/><path d="M-9 32H8v3h10q6 2 5 7H-9Z" fill="#553b38"/></g>
           <g id="nearLeg" transform="translate(-9 -45)"><path d="M-8-3H9L7 32h9q7 1 7 10H-9Z" fill="#765542"/><path d="M-9 32H8v3h10q6 2 5 7H-9Z" fill="#684234"/></g>
@@ -336,6 +349,7 @@
   <div id="controls" class="controls" hidden>
     <div class="control-meta">
       <div id="location"></div>
+      <span id="ladder-status" hidden></span>
       <button id="sound-toggle" type="button" aria-label="Звук" aria-pressed="true">Звук включён</button>
     </div>
     <div class="actions" aria-label="Управление">
@@ -365,12 +379,16 @@
   const centers = [334, 519, 704, 889];
   const streetDoors = [212, 435, 658, 881];
   const benchX = 107;
+  const ladderX = 320;
+  const walkingSpeed = 370;
   const exitX = 1033, exitReach = 40, hatchX = 169, mainCableX = 691;
   const floorCount = 5;
   const totalApartments = streetDoors.length * floorCount * centers.length;
   const entrances = streetDoors.map(() => Array.from({length: floorCount}, () => centers.map(() => false)));
   const flyerTargets = [2, 11, 18, 23, 33, 38, 42, 52, 59, 62, 70, 79];
   const paidAfterNotice = new Set([18, 33, 52, 70]);
+  const obstacles = {2: 'stroller', 11: 'trash', 23: 'stroller', 42: 'trash', 62: 'stroller', 79: 'trash'};
+  const jobSteps = ['clear', 'place', 'climb', 'open', 'cable', 'close', 'descend', 'take', 'restore'];
   const delivered = new Set();
   const doorNumbers = [
     ['1111', '0000', '0000', '1111', '1111'],
@@ -438,6 +456,8 @@
   let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let day = 1, remainingDebtors = [], wrongApartments = [];
+  let ladderCarried = false, apartmentJob = null, ladderMotion = null;
+  let ladderHeight = 0;
   let lastComplaint = 0, visibleComplaint = 0, complaintAt = 0, complaintUntil = 0, complaintSequence = 0;
   let playing = false;
   let enteredCode = '', codeChallenge = null, usingNumberKeys = false;
@@ -625,9 +645,30 @@
       <circle cx="36" cy="345" r="5" fill="#f0b778" stroke-width="2"/>
       <path d="M37 345h15" fill="none" stroke="#f0b778" stroke-width="3" stroke-linecap="round"/>
       <path d="M51 159v34q0 10 10 10h6m12 0h6q7 0 7 9v36H58" fill="none" stroke="#3c2e42" stroke-width="6" stroke-linecap="round"/>
+      <rect x="55" y="184" width="45" height="35" rx="3" fill="#756578" stroke-width="2.5"/>
+      <rect x="59" y="188" width="37" height="27" rx="2" fill="#55465b" stroke-width="1.6"/>
       <path id="wire-${index}" d="M63 203h20" stroke="#3c2e42" stroke-width="6"/>
       <path id="split-${index}" d="M67 203l-2-4m14 4 3 4" stroke="#f1ae75" stroke-width="2" opacity="0"/>
+      <g id="door-box-closed-${index}">
+        <rect x="56" y="185" width="43" height="33" rx="3" fill="#897780" stroke-width="2"/>
+        <path d="M60 189h35m-7 12v5" stroke="#b3a0a5" stroke-width="1.8" stroke-linecap="round"/>
+      </g>
+      <path id="door-box-open-${index}" d="M98 185l25-8v34l-25 7Z" fill="#9c8588" stroke-width="2" hidden=""/>
       <circle id="signal-${index}" cx="73" cy="224" r="4" fill="#a8dbad" stroke-width="1.7"/>
+      <g id="obstacle-${index}" hidden="">
+        <g id="stroller-${index}" stroke-width="2.5" hidden="">
+          <circle cx="-21" cy="-3" r="6" fill="#514657"/>
+          <circle cx="18" cy="-3" r="6" fill="#514657"/>
+          <path d="M-22-5 14-36h17m-51-1 41 33h-43" fill="none" stroke="#4b394d" stroke-width="3.5"/>
+          <path d="M-28-33q3-18 21-21 17-2 24 19l-9 16h-27Z" fill="#729095"/>
+          <path d="M-24-34h38m-32-6q10-9 19-4" fill="none" stroke="#b7b2a7" stroke-width="1.8"/>
+        </g>
+        <g id="trash-${index}" stroke-width="2.4" hidden="">
+          <path d="M-6-40q-4-9 2-9l9 7 8-7q7 3-1 10 19 18 13 32-6 9-31 6-15-2-11-17 3-12 11-22Z" fill="#655268"/>
+          <path d="M5-38q-7 12-9 20m13-19q7 9 6 14" fill="none" stroke="#9c7c8b" stroke-width="1.8"/>
+          <path d="M-24-19l12 19h-17l-6-13Z" fill="#b38369"/>
+        </g>
+      </g>
     </g>`).join('');
 
   function currentFloor() {
@@ -640,6 +681,51 @@
 
   function hasDoorNumber(door) {
     return doorNumbers[entrance][floor][door] === '1';
+  }
+
+  function atStreetLadder() {
+    return scene === 'street' && near(ladderX, 45);
+  }
+
+  function pace() {
+    return ladderCarried ? (70 - floor * 5) / 100 : 1;
+  }
+
+  function nextJobStep(door) {
+    if (apartmentJob) return apartmentJob.step;
+    return obstacles[apartmentNumber(door)] ? 0 : 1;
+  }
+
+  function jobLabel(door) {
+    if (door < 0) return 'Подойти к квартире';
+    if (!ladderCarried && !apartmentJob) return 'Нужна стремянка';
+    const obstacle = obstacles[apartmentNumber(door)];
+    const stroller = obstacle === 'stroller';
+    const labels = {
+      clear: stroller ? 'Отодвинуть коляску' : 'Отодвинуть мусор',
+      place: 'Поставить стремянку',
+      climb: 'Подняться на стремянку',
+      open: 'Открыть ящик над квартирой',
+      cable: currentFloor()[door] ? 'Починить кабель' : 'Отключить квартиру',
+      close: 'Закрыть ящик над квартирой',
+      descend: 'Спуститься со стремянки',
+      take: 'Взять стремянку',
+      restore: stroller ? 'Вернуть коляску' : 'Вернуть мусор на место',
+    };
+    return labels[jobSteps[nextJobStep(door)]];
+  }
+
+  function updateEquipment() {
+    const job = apartmentJob;
+    const placed = Boolean(job && job.step >= 2 && job.step <= 7);
+    byId('ladder-street').toggleAttribute('hidden', ladderCarried || placed);
+    byId('ladder-carried').toggleAttribute('hidden', !ladderCarried);
+    const floorLadder = byId('ladder-placed');
+    floorLadder.toggleAttribute('hidden', !placed);
+    if (placed) floorLadder.setAttribute('transform', `translate(${centers[job.door] + 53} 482)`);
+    const ladderStatus = byId('ladder-status');
+    ladderStatus.hidden = !ladderCarried;
+    if (ladderCarried) ladderStatus.textContent = `Стремянка в руках · скорость −${30 + floor * 5}%`;
   }
 
   function nearestDoor() {
@@ -829,7 +915,7 @@
       lastComplaint = 0;
       complaintAt = 0;
     }
-    const hideWin = flyersOnly || completed !== targets.length || wrongApartments.length > 0;
+    const hideWin = flyersOnly || completed !== targets.length || wrongApartments.length > 0 || Boolean(apartmentJob);
     if (win.hidden !== hideWin) {
       win.hidden = hideWin;
       saluteStart = hideWin ? null : performance.now();
@@ -932,14 +1018,25 @@
     }
     currentFloor().forEach((cut, index) => {
       const number = apartmentNumber(index);
+      const obstacle = obstacles[number];
+      const job = apartmentJob?.door === index ? apartmentJob : null;
+      const open = Boolean(job && (job.step === 4 || job.step === 5));
       byId(`apartment-${index}`).textContent = number;
       byId(`apartment-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
       byId(`plate-${index}`).toggleAttribute('hidden', !hasDoorNumber(index));
       byId(`flyer-${index}`).toggleAttribute('hidden', !delivered.has(number));
+      byId(`door-box-closed-${index}`).toggleAttribute('hidden', open);
+      byId(`door-box-open-${index}`).toggleAttribute('hidden', !open);
+      const clutter = byId(`obstacle-${index}`);
+      clutter.toggleAttribute('hidden', !obstacle);
+      if (obstacle) clutter.setAttribute('transform', `translate(${job && job.step > 0 ? -83 : 55} 451)`);
+      byId(`stroller-${index}`).toggleAttribute('hidden', obstacle !== 'stroller');
+      byId(`trash-${index}`).toggleAttribute('hidden', obstacle !== 'trash');
       byId(`wire-${index}`).setAttribute('opacity', cut ? '0' : '1');
       byId(`split-${index}`).setAttribute('opacity', cut ? '1' : '0');
       byId(`signal-${index}`).setAttribute('fill', outage(entrance, floor, index) ? '#986b78' : '#a8dbad');
     });
+    updateEquipment();
   }
 
   function goTo(nextScene, position, direction = 1) {
@@ -954,7 +1051,7 @@
   }
 
   function stairs(direction) {
-    if (climb) return;
+    if (climb || apartmentJob) return;
     if (scene === 'street') {
       if (direction !== 1) return;
       const door = nearbyEntrance();
@@ -978,26 +1075,57 @@
   }
 
   function beginClimb(next, direction, toRoof) {
-    climb = {start: performance.now(), from: x, next, direction, toRoof};
+    climb = {start: performance.now(), from: x, next, direction, toRoof, pace: pace()};
     held.clear();
   }
 
-  function toggleCable() {
-    if (day !== 2 || climb || scene === 'street') return;
-    let cut;
-    if (scene === 'roof') {
-      if (!near(mainCableX, 68)) return setGuidance('Подойдите к толстому кабелю под антенной.');
-      mainCut = !mainCut;
-      cut = mainCut;
-    } else {
-      const door = nearestDoor();
-      if (door < 0) return setGuidance('Подойдите к двери и нажмите пробел или кнопку действия.');
+  function toggleMainCable() {
+    if (day !== 2 || climb || scene !== 'roof') return;
+    if (!near(mainCableX, 68)) return setGuidance('Подойдите к толстому кабелю под антенной.');
+    mainCut = !mainCut;
+    soundEffect(mainCut ? 'cut' : 'repair');
+    snipUntil = performance.now() + 330;
+    updateView();
+  }
+
+  function startLadderMove(height) {
+    ladderMotion = {from: ladderHeight, to: height, start: performance.now()};
+    soundEffect('step');
+  }
+
+  function workOnApartment() {
+    if (day !== 2 || scene !== 'inside' || climb || ladderMotion) return;
+    const door = apartmentJob?.door ?? nearestDoor();
+    if (door < 0) return setGuidance('Подойдите к двери квартиры.');
+    if (!ladderCarried && !apartmentJob) return setGuidance('Возьмите стремянку во дворе между первым и вторым подъездами.');
+    const obstacle = obstacles[apartmentNumber(door)];
+    if (!apartmentJob) {
+      apartmentJob = {door, step: nextJobStep(door)};
+      held.clear();
+    }
+    const step = jobSteps[apartmentJob.step];
+    if (step === 'place') {
+      ladderCarried = false;
+      x = centers[door] + 53;
+      face = 1;
+      soundEffect('door');
+    } else if (step === 'climb') {
+      startLadderMove(145);
+    } else if (step === 'descend') {
+      startLadderMove(0);
+    } else if (step === 'cable') {
       const cables = currentFloor();
       cables[door] = !cables[door];
-      cut = cables[door];
+      soundEffect(cables[door] ? 'cut' : 'repair');
+      snipUntil = performance.now() + 330;
+    } else if (step === 'take') {
+      ladderCarried = true;
+      soundEffect('door');
+    } else {
+      soundEffect(step === 'open' || step === 'close' ? 'click' : 'door');
     }
-    soundEffect(cut ? 'cut' : 'repair');
-    snipUntil = performance.now() + 330;
+    if (step === 'restore' || (step === 'take' && !obstacle)) apartmentJob = null;
+    else apartmentJob.step++;
     updateView();
   }
 
@@ -1022,17 +1150,25 @@
 
   function interact() {
     if (nearBench()) return requestCode('Бабушка на лавочке', null, 'В каком году был основан посёлок Развилка?');
+    if (atStreetLadder()) {
+      ladderCarried = !ladderCarried;
+      soundEffect('door');
+      updateView();
+      return;
+    }
     if (day === 1) return deliverFlyer();
+    if (apartmentJob) return workOnApartment();
     const amp = nearbyAmplifier();
     if (amp) useAmplifier(amp);
-    else toggleCable();
+    else if (scene === 'roof') toggleMainCable();
+    else workOnApartment();
   }
 
   function hold(key) {
-    if (climb || held.has(key)) return;
+    if (climb || apartmentJob || held.has(key)) return;
     const direction = key === 'ArrowLeft' ? -1 : 1;
     face = direction;
-    const nextX = limitX(x + direction * 13);
+    const nextX = limitX(x + direction * 13 * pace());
     if (nextX !== x) stepSound(performance.now());
     x = nextX;
     held.add(key);
@@ -1124,6 +1260,7 @@
     remainingDebtors = flyerTargets.filter((number) => delivered.has(number) && !paidAfterNotice.has(number));
     day = 2;
     entrance = floor = 0;
+    ladderCarried = false;
     quest.open = true;
     goTo('street', streetDoors[0]);
     byId('next-shift').blur();
@@ -1132,6 +1269,10 @@
   function startGame() {
     entrance = floor = 0;
     day = 1;
+    ladderCarried = false;
+    apartmentJob = null;
+    ladderMotion = null;
+    ladderHeight = 0;
     delivered.clear();
     remainingDebtors = [];
     complaintSequence = 0;
@@ -1151,38 +1292,42 @@
   }
 
   function showTargets() {
-    const door = scene === 'inside' && !climb ? nearestDoor() : -1;
+    const door = scene === 'inside' && !climb ? (apartmentJob?.door ?? nearestDoor()) : -1;
     const cableCut = door >= 0 && currentFloor()[door];
     const posted = door >= 0 && delivered.has(apartmentNumber(door));
     const entry = scene === 'street' ? nearbyEntrance() : -1;
     const atBench = nearBench();
+    const atLadder = atStreetLadder();
     const atExit = scene === 'inside' && !climb && floor === 0 && near(exitX, exitReach);
     const atHatch = scene === 'roof' && near(hatchX, 85);
     const atCable = scene === 'roof' && near(mainCableX, 68);
-    const amp = day === 2 ? nearbyAmplifier() : null;
+    const amp = day === 2 && !apartmentJob ? nearbyAmplifier() : null;
     const atAmp = Boolean(amp);
-    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered].join('/');
+    const view = [day, scene, entrance, floor, disconnectedCount, mainCut, Boolean(climb), door, cableCut, posted, entry, atBench, atExit, atHatch, atCable, atAmp, amp?.stage, amp?.powered, atLadder, ladderCarried, apartmentJob?.step, Boolean(ladderMotion)].join('/');
     if (showTargets.previous === view) return;
     showTargets.previous = view;
 
     centers.forEach((_, index) => byId(`target-${index}`).setAttribute('opacity', door === index ? '.28' : '0'));
     streetDoors.forEach((_, index) => byId(`entry-target-${index}`).setAttribute('opacity', entry === index ? '.44' : '0'));
     byId('bench-target').setAttribute('opacity', atBench ? '.5' : '0');
+    byId('ladder-target').setAttribute('opacity', atLadder ? '.5' : '0');
     byId('exit-target').setAttribute('opacity', atExit ? '.8' : '0');
     byId('hatch-target').setAttribute('opacity', atHatch ? '.4' : '0');
     byId('cable-target').setAttribute('opacity', day === 2 && atCable ? '.46' : '0');
     byId('amp-target').setAttribute('opacity', atAmp && amp.stage === 'closed' ? '.65' : '0');
-    actionButton.disabled = (scene === 'street' && !atBench) || (scene === 'roof' && day === 1) || Boolean(climb);
-    if (scene === 'street') actionButton.textContent = 'Поговорить';
+    actionButton.disabled = (scene === 'street' && !atBench && !atLadder) || (scene === 'roof' && day === 1) || Boolean(climb || ladderMotion);
+    if (atLadder) actionButton.textContent = ladderCarried ? 'Оставить стремянку' : 'Взять стремянку';
+    else if (scene === 'street') actionButton.textContent = 'Поговорить';
     else if (day === 1) actionButton.textContent = 'Наклеить листовку';
     else if (atAmp) actionButton.textContent = amplifierAction(amp);
     else if (scene === 'roof') actionButton.textContent = mainCut ? 'Починить главный кабель' : 'Обрезать главный кабель';
-    else actionButton.textContent = cableCut ? 'Починить кабель' : 'Обрезать кабель';
+    else actionButton.textContent = jobLabel(door);
 
     if (climb) return setGuidance(climb.toRoof ? 'Поднимаемся на крышу…' : climb.direction === 1 ? 'Поднимаемся по лестнице…' : 'Спускаемся по лестнице…');
     if (atBench) return setGuidance('Бабушка на лавочке · пробел или кнопка «Поговорить»');
+    if (atLadder) return setGuidance(ladderCarried ? 'Здесь можно оставить стремянку.' : 'Стремянка во дворе · пробел или кнопка, чтобы взять.');
     if (scene === 'street') {
-      if (entry === 0) return setGuidance('Подъезд 1 · ↑ войти. Бабушка сидит на лавочке слева.');
+      if (entry === 0) return setGuidance(day === 2 ? 'Стремянка справа от первого подъезда. ↑ войти.' : 'Подъезд 1 · ↑ войти. Бабушка сидит на лавочке слева.');
       return setGuidance(entry >= 0 ? `Подъезд ${entry + 1} · ↑ войти` : 'Подойдите к подъезду или к бабушке на лавочке слева.');
     }
     if (scene === 'roof') {
@@ -1204,11 +1349,14 @@
     if (door >= 0) {
       const label = hasDoorNumber(door) ? `Квартира ${apartmentNumber(door)}` : 'Дверь без номера';
       if (day === 1) return setGuidance(posted ? `${label} · листовка уже наклеена.` : `${label} · пробел или кнопка, чтобы наклеить листовку.`);
-      if (cableCut) return setGuidance(`${label} · пробел или кнопка, чтобы починить кабель.`);
+      if (ladderMotion) return setGuidance(ladderMotion.to > 0 ? 'Поднимаемся на стремянку…' : 'Спускаемся со стремянки…');
+      if (apartmentJob) return setGuidance(`${label} · ${jobLabel(door)}`);
+      if (!ladderCarried) return setGuidance(`${label} · стремянку можно взять во дворе между первым и вторым подъездами.`);
+      if (cableCut) return setGuidance(`${label} · чтобы починить кабель, сначала подготовьте место для стремянки.`);
       const source = outage(entrance, floor, door);
       if (source === 'roof') return setGuidance(`${label} · сигнал отключён на крыше.`);
       if (source === 'amplifier') return setGuidance(`${label} · усилитель выключен.`);
-      return setGuidance(`${label} · пробел или кнопка, чтобы обрезать кабель.`);
+      return setGuidance(`${label} · ${jobLabel(door)}`);
     }
     if (roofAccess()) return setGuidance('↑ кодовый замок чердака · ↓ спуститься на четвёртый этаж');
     if (floor === floorCount - 1) return setGuidance('Верхний пролёт закрыт · ↓ спуститься на четвёртый этаж');
@@ -1221,9 +1369,9 @@
     previousTime = now;
     let footY = scenes[scene].footY, walking = false, opacity = 1;
     if (climb) {
-      const approach = Math.abs(climb.from - 170) / 810;
+      const approach = Math.abs(climb.from - 170) / (810 * climb.pace);
       const elapsed = (now - climb.start) / 1000;
-      const duration = climb.toRoof ? .9 : .55;
+      const duration = (climb.toRoof ? .9 : .55) / climb.pace;
       const progress = Math.min(1, Math.max(0, (elapsed - approach) / duration));
       walking = true;
       if (elapsed < approach) {
@@ -1248,7 +1396,7 @@
       }
     } else {
       const direction = Number(held.has('ArrowRight')) - Number(held.has('ArrowLeft'));
-      const nextX = limitX(x + direction * 370 * delta);
+      const nextX = limitX(x + direction * walkingSpeed * pace() * delta);
       walking = nextX !== x;
       if (walking) face = direction;
       x = nextX;
@@ -1257,6 +1405,12 @@
       steps += delta * 13;
       stepSound(now);
     }
+    if (ladderMotion) {
+      const progress = Math.max(0, Math.min(1, (now - ladderMotion.start) / 240));
+      ladderHeight = ladderMotion.from + (ladderMotion.to - ladderMotion.from) * progress;
+      if (progress === 1) ladderMotion = null;
+    }
+    footY -= ladderHeight;
     const swing = walking ? Math.sin(steps) * 24 : 0;
     const snipPose = Math.max(0, (snipUntil - now) / 330);
     const arm = snipPose > 0 ? -Math.sin(snipPose * Math.PI) * 83 : -swing * .8;
