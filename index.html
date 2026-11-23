@@ -388,7 +388,19 @@
   const entrances = streetDoors.map(() => Array.from({length: floorCount}, () => centers.map(() => false)));
   const flyerTargets = [2, 11, 18, 23, 33, 38, 42, 52, 59, 62, 70, 79];
   const paidAfterNotice = new Set([18, 33, 52, 70]);
-  const obstacles = {2: 'stroller', 11: 'trash', 23: 'stroller', 42: 'trash', 62: 'stroller', 79: 'trash'};
+  const obstacles = {
+    2: 'stroller', 5: 'bicycle', 10: 'stroller', 11: 'trash', 18: 'boxes',
+    23: 'stroller', 26: 'trash', 33: 'plant', 42: 'trash', 47: 'bicycle',
+    52: 'stroller', 57: 'boxes', 62: 'stroller', 65: 'plant', 70: 'trash',
+    74: 'bicycle', 79: 'trash',
+  };
+  const obstacleLabels = {
+    stroller: {move: 'Отодвинуть коляску', restore: 'Вернуть коляску'},
+    trash: {move: 'Отодвинуть мусор', restore: 'Вернуть мусор на место'},
+    bicycle: {move: 'Отодвинуть велосипед', restore: 'Вернуть велосипед'},
+    boxes: {move: 'Отодвинуть коробки', restore: 'Вернуть коробки'},
+    plant: {move: 'Отодвинуть цветок', restore: 'Вернуть цветок'},
+  };
   const jobSteps = ['clear', 'place', 'climb', 'open', 'cable', 'close', 'descend', 'take', 'restore'];
   const delivered = new Set();
   const doorNumbers = [
@@ -657,17 +669,35 @@
       <path id="door-box-open-${index}" d="M98 185l25-8v34l-25 7Z" fill="#9c8588" stroke-width="2" hidden=""/>
       <circle id="signal-${index}" cx="73" cy="224" r="4" fill="#a8dbad" stroke-width="1.7"/>
       <g id="obstacle-${index}" hidden="">
-        <g id="stroller-${index}" stroke-width="2.5" hidden="">
+        <g data-obstacle="stroller" stroke-width="2.5" hidden="">
           <circle cx="-21" cy="-3" r="6" fill="#514657"/>
           <circle cx="18" cy="-3" r="6" fill="#514657"/>
           <path d="M-22-5 14-36h17m-51-1 41 33h-43" fill="none" stroke="#4b394d" stroke-width="3.5"/>
           <path d="M-28-33q3-18 21-21 17-2 24 19l-9 16h-27Z" fill="#729095"/>
           <path d="M-24-34h38m-32-6q10-9 19-4" fill="none" stroke="#b7b2a7" stroke-width="1.8"/>
         </g>
-        <g id="trash-${index}" stroke-width="2.4" hidden="">
+        <g data-obstacle="trash" stroke-width="2.4" hidden="">
           <path d="M-6-40q-4-9 2-9l9 7 8-7q7 3-1 10 19 18 13 32-6 9-31 6-15-2-11-17 3-12 11-22Z" fill="#655268"/>
           <path d="M5-38q-7 12-9 20m13-19q7 9 6 14" fill="none" stroke="#9c7c8b" stroke-width="1.8"/>
           <path d="M-24-19l12 19h-17l-6-13Z" fill="#b38369"/>
+        </g>
+        <g data-obstacle="bicycle" stroke-width="2.5" hidden="">
+          <circle cx="-21" cy="-12" r="11" fill="#645866"/>
+          <circle cx="19" cy="-12" r="11" fill="#645866"/>
+          <path d="M-21-12l12-19 12 19h-24l8-13h25l-9 13m9-13 7 13-10-26 10-2" fill="none" stroke="#c48966"/>
+          <path d="M-16-32h14m-19 15v10m40-10v10" stroke="#d0a481" fill="none" stroke-linecap="round"/>
+        </g>
+        <g data-obstacle="boxes" stroke-width="2.2" hidden="">
+          <path d="M-24-24h46V0h-46Z" fill="#a6795d"/>
+          <path d="M-23-24l7-8h34l4 8m-45 5h45m-19-5v12" fill="none" stroke="#d4a77c"/>
+          <path d="M-10-50h29v25h-29Z" fill="#bd936b"/>
+          <path d="M-10-50l7-6h26l-4 6m-11 0v10" fill="none" stroke="#e3b68a"/>
+        </g>
+        <g data-obstacle="plant" stroke-width="2.3" hidden="">
+          <path d="M-12-24h24L8-1H-8Z" fill="#ad775f"/>
+          <path d="M-14-24h28v6h-28Z" fill="#c08d73"/>
+          <path d="M0-24v-26m2 13 9-8m-11 5-10-9" fill="none" stroke="#638073"/>
+          <path d="M-1-45q-14 1-15-12 12-3 15 12Zm0 1q-2-16 8-20 5 11-8 20Zm7 4q6-13 17-10-3 11-17 10Z" fill="#769683"/>
         </g>
       </g>
     </g>`).join('');
@@ -700,10 +730,9 @@
   function jobLabel(door) {
     if (door < 0) return 'Подойти к квартире';
     if (!ladderCarried && !apartmentJob) return 'Нужна стремянка';
-    const obstacle = obstacles[apartmentNumber(door)];
-    const stroller = obstacle === 'stroller';
+    const obstacle = obstacleLabels[obstacles[apartmentNumber(door)]];
     const labels = {
-      clear: stroller ? 'Отодвинуть коляску' : 'Отодвинуть мусор',
+      clear: obstacle?.move,
       place: 'Поставить стремянку',
       climb: 'Подняться на стремянку',
       open: 'Открыть ящик над квартирой',
@@ -711,7 +740,7 @@
       close: 'Закрыть ящик над квартирой',
       descend: 'Спуститься со стремянки',
       take: 'Взять стремянку',
-      restore: stroller ? 'Вернуть коляску' : 'Вернуть мусор на место',
+      restore: obstacle?.restore,
     };
     return labels[jobSteps[nextJobStep(door)]];
   }
@@ -1035,8 +1064,7 @@
       const clutter = byId(`obstacle-${index}`);
       clutter.toggleAttribute('hidden', !obstacle);
       if (obstacle) clutter.setAttribute('transform', `translate(${job && job.step > 0 ? -83 : 55} 451)`);
-      byId(`stroller-${index}`).toggleAttribute('hidden', obstacle !== 'stroller');
-      byId(`trash-${index}`).toggleAttribute('hidden', obstacle !== 'trash');
+      for (const group of clutter.children) group.toggleAttribute('hidden', group.dataset.obstacle !== obstacle);
       byId(`wire-${index}`).setAttribute('opacity', cut ? '0' : '1');
       byId(`split-${index}`).setAttribute('opacity', cut ? '1' : '0');
       byId(`signal-${index}`).setAttribute('fill', outage(entrance, floor, index) ? '#986b78' : '#a8dbad');
