@@ -44,7 +44,7 @@
   .quest ul{display:flex;flex-wrap:wrap;gap:5px;list-style:none;margin:8px 0 0;padding:0}
   .quest li{min-width:2.25rem;padding:4px 6px;background:#442f42;border-radius:5px;text-align:center;font-size:.875rem}
   .quest li[data-offline="true"]{background:#34453e;color:#cbe3c3}
-  .lock{width:min(340px,100% - 28px);padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
+  .lock{width:min(340px,100% - 28px);max-height:calc(100dvh - 24px);overflow:auto;padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
   .lock::backdrop{background:#211b2abf}
   .lock h2{margin:0;font:700 1.5rem Georgia,serif}
   .lock p{margin:7px 0;color:var(--muted)}
@@ -52,6 +52,8 @@
   #lock-error{min-height:1.25em;color:#ffc1ae;font-size:.875rem}
   .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
   .lock button{min-height:44px}
+  .keypad button:focus-visible{outline-offset:0}
+  .lock-controls{font-size:.875rem}
   #lock-submit{background:var(--gold);color:#302134;font-weight:700}
   #lock-cancel{margin-top:9px;width:100%}
   @media(max-width:600px){main{width:calc(100% - 20px);padding:13px 0}.frame{margin-top:10px}button{min-height:44px;padding:6px 9px}.score{padding:6px 9px}.status{font-size:.9rem}.win{grid-template-columns:1fr}.win button{justify-self:start}}
@@ -66,6 +68,10 @@
     [data-key="ArrowRight"]{grid-area:right}
     #cut{width:100%;min-height:62px;padding:8px;line-height:1.2}
     #sound-toggle{min-height:44px}
+  }
+  @media(pointer:coarse){
+    .keypad button{min-height:52px;font-size:1.15rem}
+    .lock-controls{display:none}
   }
 </style>
 <main>
@@ -330,6 +336,7 @@
       <output id="lock-digits" aria-label="Введённые цифры"></output>
       <p id="lock-error" role="status"></p>
       <div id="keypad" class="keypad" aria-label="Цифровые кнопки"></div>
+      <p class="lock-controls">Стрелки выбирают кнопку. Enter или пробел нажимает её.</p>
     </div>
     <button id="lock-cancel" type="button">Отмена</button>
   </dialog>
@@ -355,6 +362,8 @@
   const lockCode = '1946';
   keypad.innerHTML = `123456789`.split('').map((digit) => `<button type="button" data-digit="${digit}">${digit}</button>`).join('') +
     '<button id="lock-backspace" type="button" aria-label="Стереть цифру">⌫</button><button type="button" data-digit="0">0</button><button id="lock-submit" type="button">Открыть</button>';
+  const keypadButtons = [...keypad.querySelectorAll('button')];
+  const keypadArrows = {ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0]};
   const actionButton = byId('cut');
   const win = byId('win');
   const salute = byId('salute');
@@ -392,7 +401,7 @@
   let soundEnabled = true, musicAt = 0, musicStep = 0, lastStepSound = -Infinity;
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let playing = false;
-  let enteredCode = '', codeChallenge = null;
+  let enteredCode = '', codeChallenge = null, usingNumberKeys = false;
   let saluteStart = null;
   let climb = null, snipUntil = 0, steps = 0, previousTime = 0, guidance = '';
 
@@ -640,11 +649,49 @@
     renderCode();
   }
 
+  function moveKeypad(rowDelta, columnDelta) {
+    const current = keypadButtons.indexOf(document.activeElement);
+    if (current < 0) {
+      keypadButtons[0].focus();
+      return;
+    }
+    const row = Math.max(0, Math.min(3, Math.floor(current / 3) + rowDelta));
+    const column = Math.max(0, Math.min(2, current % 3 + columnDelta));
+    keypadButtons[row * 3 + column].focus();
+  }
+
+  function handleLockKey(event) {
+    if (!codeChallenge) return;
+    const arrow = keypadArrows[event.key];
+    if (arrow) {
+      event.preventDefault();
+      usingNumberKeys = false;
+      moveKeypad(...arrow);
+      return;
+    }
+    if (event.key === 'Tab') usingNumberKeys = false;
+    const digit = /^[0-9]$/.test(event.key);
+    const submit = event.key === 'Enter' && usingNumberKeys;
+    const activeButton = document.activeElement;
+    const activate = (event.key === 'Enter' || event.key === ' ') && keypadButtons.includes(activeButton);
+    if (!digit && event.key !== 'Backspace' && !submit && !activate) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    if (submit) submitCode();
+    else if (activate) activeButton.click();
+    else {
+      usingNumberKeys = true;
+      if (digit) addDigit(event.key);
+      else eraseDigit();
+    }
+  }
+
   function requestCode(title, onUnlock, question = '') {
     if (lock.open) return;
     held.clear();
     codeChallenge = {onUnlock, question};
     enteredCode = '';
+    usingNumberKeys = false;
     byId('lock-title').textContent = title;
     byId('lock-prompt').textContent = question || 'Введите четыре цифры. Подсказку можно узнать у бабушки на лавочке возле первого подъезда.';
     byId('lock-entry').hidden = false;
@@ -654,6 +701,7 @@
     renderCode();
     soundEffect('click');
     lock.showModal();
+    keypadButtons[0].focus();
   }
 
   function submitCode() {
@@ -879,16 +927,7 @@
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (!playing) return;
     wakeAudio();
-    if (lock.open) {
-      if (!codeChallenge) return;
-      if (!/^[0-9]$/.test(event.key) && !['Backspace', 'Enter'].includes(event.key)) return;
-      event.preventDefault();
-      if (event.repeat) return;
-      if (event.key === 'Backspace') eraseDigit();
-      else if (event.key === 'Enter') submitCode();
-      else addDigit(event.key);
-      return;
-    }
+    if (lock.open) return handleLockKey(event);
     if (event.code === 'KeyJ' && !event.repeat) {
       event.preventDefault();
       quest.open = !quest.open;
