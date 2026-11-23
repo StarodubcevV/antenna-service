@@ -42,6 +42,17 @@
   .quest ul{display:flex;flex-wrap:wrap;gap:5px;list-style:none;margin:8px 0 0;padding:0}
   .quest li{min-width:2.25rem;padding:4px 6px;background:#442f42;border-radius:5px;text-align:center;font-size:.875rem}
   .quest li[data-offline="true"]{background:#34453e;color:#cbe3c3}
+  .lock-note{margin:7px 0 0;color:var(--muted);font-size:.875rem}
+  .lock{width:min(340px,100% - 28px);padding:16px;border:1px solid #967263;border-radius:12px;background:#332839;color:var(--cream)}
+  .lock::backdrop{background:#211b2abf}
+  .lock h2{margin:0;font:700 1.5rem Georgia,serif}
+  .lock p{margin:7px 0;color:var(--muted)}
+  #lock-digits{display:block;margin:10px 0;padding:7px;text-align:center;font:700 1.35rem monospace;letter-spacing:.45em;background:#211b2a;border-radius:6px}
+  #lock-error{min-height:1.25em;color:#ffc1ae;font-size:.875rem}
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .lock button{min-height:44px}
+  #lock-submit{background:var(--gold);color:#302134;font-weight:700}
+  #lock-cancel{margin-top:9px;width:100%}
   @media(max-width:600px){main{width:calc(100% - 20px);padding:13px 0}.frame{margin-top:10px}button{min-height:44px;padding:6px 9px}.score{padding:6px 9px}.status{font-size:.9rem}.win{grid-template-columns:1fr}.win button{justify-self:start}}
   @media(max-width:700px),(pointer:coarse){
     .controls{display:grid;justify-content:stretch;gap:8px}
@@ -63,6 +74,7 @@
   <details id="quest" class="quest" open hidden>
     <summary>Отключите всех должников <span id="quest-progress"></span></summary>
     <ul id="quest-list" aria-label="Квартиры-должники"></ul>
+    <p class="lock-note">Памятка монтажника · код замков <strong id="lock-note-code"></strong></p>
   </details>
   <div id="game-frame" class="frame intro-active">
     <svg id="scene" viewBox="0 0 1080 550" role="img" aria-label="Улица и серая пятиэтажка с четырьмя подъездами">
@@ -292,6 +304,14 @@
     </div>
   </div>
   <p id="status" class="status" aria-live="polite" hidden></p>
+  <dialog id="lock" class="lock" aria-labelledby="lock-title">
+    <h2 id="lock-title">Кодовый замок</h2>
+    <p>Введите четыре цифры. Код есть в памятке монтажника.</p>
+    <output id="lock-digits" aria-label="Введённый код"></output>
+    <p id="lock-error" role="status"></p>
+    <div id="keypad" class="keypad" aria-label="Цифровые кнопки"></div>
+    <button id="lock-cancel" type="button">Отмена</button>
+  </dialog>
 </main>
 <script>
   const centers = [334, 519, 704, 889];
@@ -308,6 +328,12 @@
   const worker = byId('worker');
   const rig = byId('rig');
   const quest = byId('quest');
+  const lock = byId('lock');
+  const keypad = byId('keypad');
+  const lockCode = '1946';
+  byId('lock-note-code').textContent = lockCode;
+  keypad.innerHTML = `123456789`.split('').map((digit) => `<button type="button" data-digit="${digit}">${digit}</button>`).join('') +
+    '<button id="lock-backspace" type="button" aria-label="Стереть цифру">⌫</button><button type="button" data-digit="0">0</button><button id="lock-submit" type="button">Открыть</button>';
   const actionButton = byId('cut');
   const win = byId('win');
   const salute = byId('salute');
@@ -333,6 +359,7 @@
   const movement = ['ArrowLeft', 'ArrowRight'];
   let entrance, floor, x, face, scene, mainCut, disconnectedCount;
   let playing = false;
+  let enteredCode = '', unlock = null;
   let saluteStart = null;
   let climb = null, snipUntil = 0, steps = 0, previousTime = 0, guidance = '';
 
@@ -425,9 +452,58 @@
     return amp.powered ? 'Вытащить вилку' : 'Вставить вилку';
   }
 
+  function renderCode() {
+    byId('lock-digits').textContent = enteredCode.padEnd(lockCode.length, '–');
+  }
+
+  function addDigit(digit) {
+    if (enteredCode.length < lockCode.length) enteredCode += digit;
+    byId('lock-error').textContent = '';
+    renderCode();
+  }
+
+  function eraseDigit() {
+    enteredCode = enteredCode.slice(0, -1);
+    byId('lock-error').textContent = '';
+    renderCode();
+  }
+
+  function requestCode(title, onUnlock) {
+    if (lock.open) return;
+    held.clear();
+    unlock = onUnlock;
+    enteredCode = '';
+    byId('lock-title').textContent = title;
+    byId('lock-error').textContent = '';
+    renderCode();
+    lock.showModal();
+  }
+
+  function submitCode() {
+    if (enteredCode.length !== lockCode.length) {
+      byId('lock-error').textContent = 'Введите все четыре цифры.';
+      return;
+    }
+    if (enteredCode !== lockCode) {
+      byId('lock-error').textContent = 'Неверный код. Попробуйте ещё раз.';
+      enteredCode = '';
+      renderCode();
+      return;
+    }
+    const onUnlock = unlock;
+    unlock = null;
+    lock.close();
+    onUnlock?.();
+  }
+
   function useAmplifier(amp) {
-    if (amp.stage === 'closed') amp.stage = 'open';
-    else if (amp.stage === 'used') amp.stage = 'closed';
+    if (amp.stage === 'closed') {
+      return requestCode('Замок ящика с усилителем', () => {
+        amp.stage = 'open';
+        updateView();
+      });
+    }
+    if (amp.stage === 'used') amp.stage = 'closed';
     else {
       amp.powered = !amp.powered;
       amp.stage = 'used';
@@ -553,6 +629,11 @@
     if (next < 0) return setGuidance('Вы на первом этаже. Выход на улицу справа.');
     const toRoof = next === floorCount && roofAccess();
     if (next >= floorCount && !toRoof) return setGuidance('На крышу можно подняться с пятого этажа второго подъезда.');
+    if (toRoof) return requestCode('Замок на входе на чердак', () => beginClimb(next, direction, true));
+    beginClimb(next, direction, false);
+  }
+
+  function beginClimb(next, direction, toRoof) {
     climb = {start: performance.now(), from: x, next, direction, toRoof};
     held.clear();
   }
@@ -595,6 +676,15 @@
   window.addEventListener('keydown', (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (!playing) return;
+    if (lock.open) {
+      if (!/^[0-9]$/.test(event.key) && !['Backspace', 'Enter'].includes(event.key)) return;
+      event.preventDefault();
+      if (event.repeat) return;
+      if (event.key === 'Backspace') eraseDigit();
+      else if (event.key === 'Enter') submitCode();
+      else addDigit(event.key);
+      return;
+    }
     if (event.code === 'KeyJ' && !event.repeat) {
       event.preventDefault();
       quest.open = !quest.open;
@@ -632,8 +722,17 @@
     });
   });
   actionButton.addEventListener('click', (event) => {
-    interact();
     if (event.detail > 0) event.currentTarget.blur();
+    interact();
+  });
+  keypad.querySelectorAll('[data-digit]').forEach((button) => {
+    button.addEventListener('click', () => addDigit(button.dataset.digit));
+  });
+  byId('lock-backspace').addEventListener('click', eraseDigit);
+  byId('lock-submit').addEventListener('click', submitCode);
+  byId('lock-cancel').addEventListener('click', () => lock.close());
+  lock.addEventListener('close', () => {
+    if (!lock.open) unlock = null;
   });
   quest.querySelector('summary').addEventListener('click', (event) => {
     if (event.detail > 0) event.currentTarget.blur();
@@ -718,7 +817,7 @@
       if (source === 'amplifier') return setGuidance(`${label} · усилитель выключен.`);
       return setGuidance(`${label} · пробел или кнопка, чтобы обрезать кабель.`);
     }
-    if (roofAccess()) return setGuidance('↑ подняться на крышу · ↓ спуститься на четвёртый этаж');
+    if (roofAccess()) return setGuidance('↑ кодовый замок чердака · ↓ спуститься на четвёртый этаж');
     if (floor === floorCount - 1) return setGuidance('Верхний пролёт закрыт · ↓ спуститься на четвёртый этаж');
     if (floor === 0) return setGuidance('↑ этаж выше · выход на улицу справа');
     return setGuidance('← → ходьба · ↑ ↓ смена этажа · пробел у двери');
